@@ -11,11 +11,25 @@ If dependencies are already installed in this workspace, you can go straight to 
 1. Paste a YouTube video link, or choose a local MP4/MKV/WebM/MOV/AVI.
 2. Click **Load video**. The green rectangle marks the detected score area.
 3. Check the preview. Drag a rectangle to adjust the crop if needed. Use the time slider and **Show frame** to inspect another point. Include tempo markings, section letters, and symbols above/below the staff.
-4. Click **Extract score lines** at the upper-right of the **Score area** tab, above the preview.
+4. In **Automatic** mode, click **Extract score lines** at the upper-right of the **Score area** tab, above the preview. For capturing lines yourself, use **Manual** mode below.
 5. In **Review & export**, select lines to inspect them. Include/exclude lines or move a selected line up/down.
 6. Set the PDF title, paper size, and line gap, then click **Export PDF**.
 
 The default line gap is 1.5 mm. Images retain their aspect ratio and lines never split across PDF pages. The PDF opens automatically after export on Windows.
+
+## Manual mode
+
+Use this when you want to choose every line yourself, including scores at the top of a video or layouts that automatic extraction misses.
+
+1. Select **Manual** beside **Capture mode** in the **Score area** tab and load your video. Starting a manual session returns the preview to the beginning.
+2. Drag a rectangle around **one complete score line**, wherever it appears on screen.
+3. Press **Play**. Choose **0.5x**, **1x**, **1.5x**, or **2x** from the speed menu. **Pause** stops at the displayed frame. The preview is silent; YouTube downloads contain video only.
+4. Click **Add line** above the preview each time you want to capture the line currently shown. Playback continues, the counter increases, and the capture is saved immediately.
+5. Open **Review & export** when finished. Include/exclude or reorder captures, then export the PDF as usual.
+
+Every click appends one original-resolution image of the selected rectangle in click order. Manual mode does not detect staffs, filter similar lines, change colors, or remove repeated lines. Automatic extraction is not required first. Drag the seek slider to jump to another time; the crop stays in place. Adjusting the crop pauses playback. Opening the review tab also pauses playback.
+
+Automatic results and manual captures are kept separately while the current video is loaded. Switching modes restores that mode's list. Loading another video starts a fresh session; existing captures remain saved under `output/manual_*/project.json` and can be reopened for review/export.
 
 ## Supported layouts
 

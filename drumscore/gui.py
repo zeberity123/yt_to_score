@@ -11,7 +11,9 @@ import cv2
 from PIL import Image, ImageTk
 
 from .extract import Extraction, ScoreLine, extract
+from .manual import append_line, new_manual_project
 from .pdf import export_pdf
+from .playback import VideoPlayer
 from .video import Cancelled, download, metadata, preview
 from .vision import Region, auto_region, clean_score, split_systems
 
@@ -37,6 +39,15 @@ class App(tk.Tk):
         self.busy = False
         self.video = None
         self.project = None
+        self.automatic_project = None
+        self.manual_project = None
+        self.player = None
+        self.video_duration = 0
+        self.frame_time = 0
+        self.seek_dragging = False
+        self.resume_after_seek = False
+        self.awaiting_frame = False
+        self.playback_ended = False
         self.frame = None
         self.region = Region()
         self.preview_photo = None
@@ -44,6 +55,10 @@ class App(tk.Tk):
         self.source = tk.StringVar()
         self.score_title = tk.StringVar(value="Drum score")
         self.mode = tk.StringVar(value="auto")
+        self.capture_mode = tk.StringVar(value="Automatic")
+        self.last_capture_mode = "Automatic"
+        self.speed = tk.StringVar(value="1x")
+        self.manual_count = tk.StringVar(value="0 lines added")
         self.time = tk.DoubleVar(value=20)
         self.interval = tk.StringVar(value="0.5")
         self.threshold = tk.StringVar(value="0.035")
@@ -79,37 +94,63 @@ class App(tk.Tk):
         review = ttk.Frame(self.tabs, padding=12)
         self.tabs.add(setup, text="1  ·  Score area")
         self.tabs.add(review, text="2  ·  Review & export")
+        self.tabs.bind("<<NotebookTabChanged>>", self.tab_changed)
         setup.columnconfigure(0, weight=1)
-        setup.rowconfigure(2, weight=1)
-        row = ttk.Frame(setup)
-        row.grid(row=0, column=0, sticky="ew")
+        setup.rowconfigure(3, weight=1)
+        mode_row = ttk.Frame(setup)
+        mode_row.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        ttk.Label(mode_row, text="Capture mode").pack(side="left", padx=(0, 8))
+        for mode in ("Automatic", "Manual"):
+            ttk.Radiobutton(mode_row, text=mode, value=mode, variable=self.capture_mode,
+                            command=self.change_capture_mode).pack(side="left", padx=(0, 12))
+        row = self.layout_row = ttk.Frame(setup)
+        row.grid(row=1, column=0, sticky="ew")
         ttk.Label(row, text="Layout").pack(side="left")
         ttk.Combobox(row, textvariable=self.mode, values=["auto", "bottom", "page"], width=10, state="readonly").pack(side="left", padx=8)
         self.action(row, "Detect score area", self.detect_region).pack(side="left")
         ttk.Label(row, text="Drag a rectangle on the preview to set the crop.", wraplength=300).pack(side="left", padx=14)
         extract_row = ttk.Frame(setup)
-        extract_row.grid(row=1, column=0, sticky="ew", pady=(8, 0))
-        ttk.Checkbutton(extract_row, text="Remove overlapping lines when pages scroll", variable=self.remove_overlap).pack(side="left")
+        extract_row.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        self.overlap_check = ttk.Checkbutton(extract_row, text="Remove overlapping lines when pages scroll", variable=self.remove_overlap)
+        self.overlap_check.pack(side="left")
         self.extract_button = self.action(extract_row, "Extract score lines", self.extract_video)
         self.extract_button.pack(side="right")
+        self.count_label = ttk.Label(extract_row, textvariable=self.manual_count)
+        self.add_line_button = self.action(extract_row, "Add line", self.add_manual_line)
         self.canvas = tk.Canvas(setup, background="#202630", highlightthickness=0, height=380)
-        self.canvas.grid(row=2, column=0, sticky="nsew", pady=10)
+        self.canvas.grid(row=3, column=0, sticky="nsew", pady=10)
         self.canvas.bind("<Configure>", lambda e: self.draw_preview())
         self.canvas.bind("<ButtonPress-1>", self.crop_start)
         self.canvas.bind("<B1-Motion>", self.crop_drag)
         self.canvas.bind("<ButtonRelease-1>", self.crop_end)
         self.drag_origin = None
         seek_row = ttk.Frame(setup)
-        seek_row.grid(row=3, column=0, sticky="ew")
+        seek_row.grid(row=4, column=0, sticky="ew")
         self.seek = ttk.Scale(seek_row, from_=0, to=300, variable=self.time)
         self.seek.pack(side="left", fill="x", expand=True)
+        self.seek.bind("<ButtonPress-1>", self.begin_seek)
+        self.seek.bind("<ButtonRelease-1>", self.end_seek)
+        self.seek.bind("<KeyRelease>", lambda event: self.seek_video())
         self.time_label = ttk.Label(seek_row, text="20.0 s", width=10)
         self.time_label.pack(side="left", padx=8)
         self.time.trace_add("write", lambda *_: self.time_label.configure(text=f"{self.time.get():.1f} s"))
         self.action(seek_row, "Show frame", self.show_frame).pack(side="left")
-        self.action(seek_row, "Add this view", self.manual_capture).pack(side="left", padx=(8, 0))
-        options = ttk.Frame(setup)
-        options.grid(row=4, column=0, sticky="ew", pady=(8, 0))
+        self.add_view_button = self.action(seek_row, "Add this view", self.manual_capture)
+        self.add_view_button.pack(side="left", padx=(8, 0))
+        self.playback_row = ttk.Frame(setup)
+        self.playback_row.grid(row=5, column=0, sticky="ew", pady=(8, 0))
+        self.play_button = self.action(self.playback_row, "Play", self.toggle_playback)
+        self.play_button.pack(side="left", padx=(0, 12))
+        ttk.Label(self.playback_row, text="Speed").pack(side="left")
+        speed_control = ttk.Combobox(self.playback_row, textvariable=self.speed,
+                                    values=["0.5x", "1x", "1.5x", "2x"], width=6, state="readonly")
+        speed_control.pack(side="left", padx=8)
+        speed_control.bind("<<ComboboxSelected>>", lambda event: self.change_speed())
+        ttk.Label(self.playback_row, text="Drag one score line, then click Add line. Video preview has no audio.",
+                  wraplength=430).pack(side="left", padx=8)
+        self.playback_row.grid_remove()
+        options = self.auto_options = ttk.Frame(setup)
+        options.grid(row=6, column=0, sticky="ew", pady=(8, 0))
         options.columnconfigure((0, 1), weight=1)
         for i, (label, variable, width) in enumerate([
             ("Sample every (s)", self.interval, 5), ("Change threshold", self.threshold, 6),
@@ -171,6 +212,7 @@ class App(tk.Tk):
         return ttk.Button(parent, text=label, command=guarded)
 
     def worker(self, task, callback):
+        self.pause_playback()
         self.busy = True
         self.cancel.clear()
         self.progress["value"] = 0
@@ -206,7 +248,109 @@ class App(tk.Tk):
                         messagebox.showerror("Could not complete operation", a)
         except queue.Empty:
             pass
-        self.after(100, self.poll)
+        self.consume_playback()
+        self.after(33, self.poll)
+
+    def change_capture_mode(self):
+        if self.busy:
+            self.capture_mode.set(self.last_capture_mode)
+            self.status.set("Wait for the current operation, or click Cancel, before switching modes.")
+            return
+        self.pause_playback()
+        self.last_capture_mode = self.capture_mode.get()
+        manual = self.capture_mode.get() == "Manual"
+        for widget in (self.layout_row, self.auto_options):
+            widget.grid_remove() if manual else widget.grid()
+        for widget in (self.overlap_check, self.extract_button, self.add_view_button):
+            widget.pack_forget()
+        if manual:
+            self.count_label.pack(side="left")
+            self.add_line_button.pack(side="right")
+            self.playback_row.grid()
+            self.project = self.manual_project
+            if self.player and self.manual_project is None:
+                self.time.set(0)
+                self.seek_video()
+            self.status.set("Manual mode: drag a rectangle around one line, press Play, and click Add line whenever you want to capture it.")
+        else:
+            self.count_label.pack_forget()
+            self.add_line_button.pack_forget()
+            self.playback_row.grid_remove()
+            self.overlap_check.pack(side="left")
+            self.extract_button.pack(side="right")
+            self.add_view_button.pack(side="left", padx=(8, 0))
+            self.project = self.automatic_project
+            self.status.set("Automatic mode: check the score crop, then click Extract score lines.")
+        self.refresh_lines()
+
+    def tab_changed(self, event=None):
+        if self.tabs.select() and self.tabs.index("current") == 1:
+            self.pause_playback()
+
+    def pause_playback(self):
+        if self.player:
+            self.player.pause()
+        self.play_button.configure(text="Play")
+
+    def close_player(self):
+        if self.player:
+            self.player.close()
+            self.player = None
+        self.play_button.configure(text="Play")
+        self.awaiting_frame = self.seek_dragging = False
+
+    def toggle_playback(self):
+        if not self.player:
+            raise ValueError("Load a video first.")
+        if self.player.playing:
+            self.pause_playback()
+        else:
+            if self.awaiting_frame:
+                return
+            self.player.play(0 if self.playback_ended else self.frame_time)
+            self.playback_ended = False
+            self.play_button.configure(text="Pause")
+
+    def change_speed(self):
+        if self.player:
+            self.player.set_speed(float(self.speed.get().rstrip("x")))
+
+    def consume_playback(self):
+        if not self.player or self.seek_dragging:
+            return
+        packet = self.player.take_frame()
+        if packet is None:
+            return
+        if packet.error:
+            self.close_player()
+            self.status.set(packet.error)
+            messagebox.showerror("Video playback", packet.error)
+            return
+        self.frame, self.frame_time = packet.image, packet.seconds
+        self.time.set(packet.seconds)
+        self.awaiting_frame = False
+        self.playback_ended = packet.ended
+        self.play_button.configure(text="Pause" if self.player.playing else "Play")
+        self.draw_preview()
+
+    def begin_seek(self, event=None):
+        self.seek_dragging = True
+        self.resume_after_seek = bool(self.player and self.player.playing)
+        self.pause_playback()
+
+    def end_seek(self, event=None):
+        self.seek_dragging = False
+        self.seek_video(resume=self.resume_after_seek)
+
+    def seek_video(self, resume=False):
+        if not self.player or self.busy:
+            return
+        self.awaiting_frame = True
+        self.playback_ended = False
+        self.player.seek(self.time.get())
+        if resume:
+            self.player.play()
+        self.play_button.configure(text="Pause" if self.player.playing else "Play")
 
     def choose_file(self):
         path = filedialog.askopenfilename(filetypes=[("Videos", "*.mp4 *.mkv *.webm *.mov *.avi"), ("All files", "*.*")])
@@ -217,34 +361,41 @@ class App(tk.Tk):
         source = self.source.get().strip()
         if not source:
             raise ValueError("Enter a YouTube link or choose a local video first.")
+        manual = self.capture_mode.get() == "Manual"
         def task():
             path, title = download(source, ROOT/"output"/"cache", self.report, self.cancel)
             _, _, duration = metadata(path)
-            seconds = min(20, duration*.1)
+            seconds = 0 if manual else min(20, duration*.1)
             return path, title, duration, seconds, preview(path, seconds)
         def loaded(result):
+            self.close_player()
             self.video, title, duration, seconds, self.frame = result
+            self.video_duration = duration
             self.loaded_source = source
             self.score_title.set(title)
             self.seek.configure(to=max(0, duration-.1))
             self.time.set(seconds)
             self.frame_time = seconds
             self.project = None
+            self.manual_project = self.automatic_project = None
+            self.manual_count.set("0 lines added")
             self.refresh_lines()
             self.region = auto_region(self.frame, self.mode.get())
             self.draw_preview()
-            self.status.set("Video loaded. Check the green crop; drag to adjust it, then extract.")
+            self.player = VideoPlayer(self.video, duration, seconds)
+            self.change_speed()
+            self.playback_ended = False
+            if self.capture_mode.get() == "Manual":
+                self.status.set("Video loaded. Drag a rectangle around one line, press Play, then click Add line for each capture.")
+            else:
+                self.status.set("Video loaded. Check the green crop; drag to adjust it, then extract.")
         self.worker(task, loaded)
 
     def show_frame(self):
         if not self.video:
             raise ValueError("Load a video first.")
-        seconds = self.time.get()
-        def shown(frame):
-            self.frame = frame
-            self.frame_time = seconds
-            self.draw_preview()
-        self.worker(lambda: preview(self.video, seconds), shown)
+        self.pause_playback()
+        self.seek_video()
 
     def detect_region(self):
         if self.frame is not None:
@@ -275,6 +426,7 @@ class App(tk.Tk):
 
     def crop_start(self, event):
         if self.frame is not None and not self.busy:
+            self.pause_playback()
             self.drag_origin = self.normalized_point(event)
 
     def crop_drag(self, event):
@@ -300,6 +452,7 @@ class App(tk.Tk):
         remove_overlap = self.remove_overlap.get()
         def done(project):
             self.project = project
+            self.automatic_project = project
             self.refresh_lines()
             self.tabs.select(1)
             self.status.set(f"Extracted {len(project.lines)} lines. Review them, then export a PDF.")
@@ -309,10 +462,13 @@ class App(tk.Tk):
 
     def refresh_lines(self, selection=0):
         self.line_list.delete(0, "end")
+        self.review_note.configure(text="Select a line to inspect it. Included lines are exported in list order.")
         if self.project:
             for i, line in enumerate(self.project.lines):
-                self.line_list.insert("end", f"{'✓' if line.included else '—'}  {i+1:03d}   ·   {line.time//60:.0f}:{line.time%60:04.1f}   ·   view {line.view}")
-            self.review_note.configure(text="\n".join(self.project.warnings))
+                origin = f"view {line.view}" if line.view else "manual"
+                self.line_list.insert("end", f"{'✓' if line.included else '—'}  {i+1:03d}   ·   {line.time//60:.0f}:{line.time%60:04.1f}   ·   {origin}")
+            if self.project.warnings:
+                self.review_note.configure(text="\n".join(self.project.warnings))
             if self.project.lines:
                 self.line_list.selection_set(min(selection, len(self.project.lines)-1))
         self.show_line()
@@ -366,6 +522,24 @@ class App(tk.Tk):
         self.tabs.select(1)
         self.status.set(f"Inserted {len(strips)} lines after the selected line.")
 
+    def add_manual_line(self):
+        if not self.video or self.frame is None:
+            raise ValueError("Load a video first, then drag a rectangle around one score line.")
+        if self.awaiting_frame or self.seek_dragging:
+            self.status.set("Wait for the selected frame to appear before adding a line.")
+            return
+        if self.manual_project is None:
+            self.manual_project = new_manual_project(ROOT/"output", self.score_title.get(),
+                                                     self.loaded_source, self.region)
+        project = self.manual_project
+        project.title = self.score_title.get()
+        append_line(project, self.frame, self.region, self.frame_time)
+        self.project = project
+        count = len(project.lines)
+        self.manual_count.set(f"{count} {'line' if count == 1 else 'lines'} added")
+        self.refresh_lines(count-1)
+        self.status.set(f"Added line {count} at {self.frame_time:.1f}s. Keep adding lines, or open Review & export when ready.")
+
     def save_project(self):
         if self.project:
             self.project.title = self.score_title.get()
@@ -375,7 +549,12 @@ class App(tk.Tk):
     def open_project(self):
         filename = filedialog.askopenfilename(initialdir=ROOT/"output", filetypes=[("Score project", "project.json"), ("JSON", "*.json")])
         if filename:
+            self.close_player()
             self.project = Extraction.load(filename)
+            self.automatic_project = self.project
+            self.manual_project = None
+            self.capture_mode.set("Automatic")
+            self.change_capture_mode()
             self.score_title.set(self.project.title)
             self.video = None
             self.frame = None
@@ -386,7 +565,8 @@ class App(tk.Tk):
 
     def export(self):
         if not self.project:
-            raise ValueError("Extract a video or open a saved project first.")
+            raise ValueError("Add lines in Manual mode, extract a video, or open a saved project first.")
+        self.pause_playback()
         import re
         name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", self.score_title.get())[:100].strip(". ") or "drum-score"
         filename = filedialog.asksaveasfilename(initialdir=ROOT/"output", initialfile=name+".pdf", defaultextension=".pdf", filetypes=[("PDF", "*.pdf")])
@@ -402,6 +582,7 @@ class App(tk.Tk):
 
     def close(self):
         self.cancel.set()
+        self.close_player()
         self.destroy()
 
 
