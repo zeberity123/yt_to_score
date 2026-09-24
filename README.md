@@ -11,7 +11,7 @@ If dependencies are already installed in this workspace, you can go straight to 
 1. Paste a YouTube video link, or choose a local MP4/MKV/WebM/MOV/AVI.
 2. Click **Load video**. The green rectangle marks the detected score area.
 3. Check the preview. Drag a rectangle to adjust the crop if needed. Use the time slider and **Show frame** to inspect another point. Include tempo markings, section letters, and symbols above/below the staff.
-4. Click **Extract score lines**.
+4. Click **Extract score lines** at the upper-right of the **Score area** tab, above the preview.
 5. In **Review & export**, select lines to inspect them. Include/exclude lines or move a selected line up/down.
 6. Set the PDF title, paper size, and line gap, then click **Export PDF**.
 
