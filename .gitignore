@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+output/
+samples/
+diagnostics/
+video-info.json
+.env
+.env.*
+!.env.example
