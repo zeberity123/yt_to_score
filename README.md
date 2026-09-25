@@ -4,8 +4,8 @@ A Windows Electron app that turns the **sheet music already visible in a YouTube
 
 ## Start
 
-For Windows x64, download `Video-Sheet-to-PDF-0.5.0-win-x64.exe` from the
-[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.5.0)
+For Windows x64, download `Video-Sheet-to-PDF-0.5.1-win-x64.exe` from the
+[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.5.1)
 and double-click it. This portable executable includes Python, FFmpeg, and Node.js;
 no separate installation is needed. The first launch extracts the bundled app.
 Working projects and cached videos are stored under
