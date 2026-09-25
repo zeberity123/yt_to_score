@@ -23,6 +23,7 @@ class ScoreLine:
     crop: list[float] | None = None
     original_path: str | None = None
     original_crop: list[float] | None = None
+    height_scale: float = 1.0
 
 
 @dataclass
@@ -34,11 +35,12 @@ class Extraction:
     lines: list[ScoreLine]
     warnings: list[str]
     notation: str = 'staff'
+    bars_per_line: int = 0
 
     def save(self):
         data = {"version": 1, "title": self.title, "source": self.source,
                 "region": asdict(self.region), "lines": [asdict(line) for line in self.lines],
-                "warnings": self.warnings, "notation": self.notation}
+                "warnings": self.warnings, "notation": self.notation, "bars_per_line": self.bars_per_line}
         temp = self.directory / "project.tmp"
         try:
             temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -53,7 +55,8 @@ class Extraction:
         if data.get("version") != 1:
             raise ValueError("Unsupported project version.")
         return cls(filename.parent, data["title"], data["source"], Region(**data["region"]),
-                   [ScoreLine(**line) for line in data["lines"]], data.get("warnings", []), data.get('notation', 'staff'))
+                   [ScoreLine(**line) for line in data["lines"]], data.get("warnings", []), data.get('notation', 'staff'),
+                   data.get('bars_per_line', 0))
 
 
 def extract(path, destination, title="Sheet music", source="", region=None, mode="auto",

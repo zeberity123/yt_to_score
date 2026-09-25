@@ -22,6 +22,7 @@ def main():
     parser.add_argument("--end", type=float)
     parser.add_argument("--gap", type=float, default=0, help="Gap between score lines in mm (default 0)")
     parser.add_argument("--paper", choices=list(PAPER_SIZES), default="A4")
+    parser.add_argument("--bars-per-line",type=int,default=None,help='Arrange guitar/bass TAB into 4-16 bars per print line; 0 keeps captures')
     parser.add_argument("--left-margin", type=float, default=3, help="Left margin in mm, 0-40 (default 3)")
     parser.add_argument("--right-margin", type=float, default=3, help="Right margin in mm, 0-40 (default 3)")
     parser.add_argument("--project", type=Path, help="Re-export an existing project.json")
@@ -48,7 +49,7 @@ def main():
                               args.interval, args.threshold, args.start, args.end, report,
                               remove_overlap=not args.keep_overlap, notation=args.notation)
         pages = export_pdf(project, args.output, args.paper, args.gap, title=args.title,
-                           left_margin_mm=args.left_margin, right_margin_mm=args.right_margin)
+                           left_margin_mm=args.left_margin, right_margin_mm=args.right_margin,bars_per_line=args.bars_per_line)
         print(f"Saved {args.output} ({pages} pages, {sum(line.included for line in project.lines)} lines)")
         print(f"Review project: {project.directory / 'project.json'}")
         for warning in project.warnings:

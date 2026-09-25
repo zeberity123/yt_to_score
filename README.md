@@ -7,8 +7,8 @@ and print output. Capture, review, crop editing, and phone layouts share the sam
 
 ## Start
 
-For Windows x64, download `Video-Sheet-to-PDF-0.7.0-win-x64.exe` from the
-[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.7.0)
+For Windows x64, download `Video-Sheet-to-PDF-0.8.0-win-x64.exe` from the
+[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.8.0)
 and double-click it. This portable executable includes Python, FFmpeg, and Node.js;
 no separate installation is needed. The first launch extracts the bundled app.
 Working projects and cached videos are stored under
@@ -93,6 +93,35 @@ Use **Down/Right** to select the next captured line and **Up/Left** for the prev
 **Edit crop** opens the retained original frame for a selected line. Drag a corner outward to recover more notation, inward to crop, or drag inside to move the selection. You can also enter exact percentage edges. **Apply crop** saves a new image; **Cancel** discards the pending crop. **Restore original** restores the first captured line, including the automatic extractor's original cleanup. Automatic edits use the retained cleaned source frame; the initial automatic line uses the median of sampled frames.
 
 New captures keep their complete source frame, so crop expansion still works after saving and reopening a `.drumscore` project without the video. Older `project.json` files are supported, but their editor can only recover pixels inside the original stored line image. It cannot reconstruct pixels that were never saved.
+
+### Compact TAB printing and height correction
+
+In **Review & export**, enable **Arrange TAB bars** for guitar or standalone
+four-string bass TAB, then choose a **Target bars per line** from 4 to 16 (starts
+at 6). **Preview print lines** shows the resulting rows before PDF export.
+Captured lines remain unchanged in the sidebar. Measures keep their order and
+all image columns are retained. Double barlines count as one boundary. Uncertain
+or combined staff/TAB lines stay intact and are listed in the preview notes.
+Short final rows are not stretched to fill the page. Turning the option off
+returns to one captured image per print line.
+
+In **Edit crop**, adjust **Line height (%)** to correct vertically stretched
+notation. 100% is the original ratio; 75% reduces only the height. The range is
+25–200%. Use **Apply height to all lines** for a consistent correction across the
+score, or leave it off to edit one line. The result preview updates immediately.
+**Restore original** resets that line's crop and height. Source images stay intact,
+and repeating a height edit replaces the percentage instead of compounding it.
+Height correction works with every instrument and with captured or arranged rows.
+
+Both settings are saved in projects and work on existing captures without
+re-extracting. Duplicate-detection improvements remain the default for all new
+automatic extractions; existing captures are never silently re-extracted.
+
+For the saved `_iF6NXbkCws` reference captures, A4 with 3 mm side margins and no
+line gap produces 15 pages in the original layout, 6 pages at six bars per line,
+and 5 pages at six bars with 75% height. Eight bars produces 4 pages at original
+height. These are image arrangements, not music re-engraving: check annotations,
+ties and partial measures where a print line breaks, and choose a readable size.
 
 Extraction is heuristic. Review the result before printing, especially dense annotations, transitions, partial lines at screen edges, and translucent overlays. Closely packed text can be associated with the neighboring line.
 

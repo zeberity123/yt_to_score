@@ -9,6 +9,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen.canvas import Canvas
+from .print_layout import print_rows
 
 
 PAPER_SIZES = {
@@ -49,7 +50,7 @@ def title_fallbacks():
 
 
 def export_pdf(project, filename, paper="A4", gap_mm=0, margin_mm=12, title=None,
-               *, left_margin_mm=3, right_margin_mm=3):
+               *, left_margin_mm=3, right_margin_mm=3, bars_per_line=None):
     included = [line for line in project.lines if line.included]
     if not included:
         raise ValueError("Select at least one score line to export.")
@@ -66,6 +67,7 @@ def export_pdf(project, filename, paper="A4", gap_mm=0, margin_mm=12, title=None
     margin, gap = margin_mm*72/25.4, gap_mm*72/25.4
     left_margin, right_margin = left_margin_mm*72/25.4, right_margin_mm*72/25.4
     available_width = width-left_margin-right_margin
+    rows, _ = print_rows(project,bars_per_line)
     filename = Path(filename)
     filename.parent.mkdir(parents=True, exist_ok=True)
     fd, temp = tempfile.mkstemp(suffix=".pdf", dir=filename.parent)
@@ -112,10 +114,10 @@ def export_pdf(project, filename, paper="A4", gap_mm=0, margin_mm=12, title=None
             canvas.drawCentredString(width/2, margin*.55, str(page))
 
         y = header()
-        for line in included:
-            with Image.open(project.directory / line.path) as img:
-                draw_width = available_width
-                draw_height = img.height*draw_width/img.width
+        for row in rows:
+            with row.image as img:
+                draw_width = available_width*row.width_fraction
+                draw_height = img.height*draw_width/img.width*row.height_scale
                 if draw_height > height-margin*2-65:
                     factor = (height-margin*2-65)/draw_height
                     draw_width *= factor

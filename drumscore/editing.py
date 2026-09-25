@@ -27,15 +27,17 @@ def project_file(project, name):
     return path
 
 
-def edit_line(project, index, crop=None, reset=False):
+def edit_line(project, index, crop=None, reset=False, *, height_scale=None, all_heights=False):
     line = project.lines[index]
     old = asdict(line)
+    old_heights = [item.height_scale for item in project.lines]
     new_path = None
     try:
         if reset:
             line.path = line.original_path or line.path
             line.crop = line.original_crop.copy() if line.original_crop else None
-        else:
+            line.height_scale = 1.0
+        elif crop is not None and list(crop) != line.crop:
             region = Region(*crop)
             source = project_file(project, line.source_path or line.original_path or line.path)
             with Image.open(source) as image:
@@ -50,10 +52,18 @@ def edit_line(project, index, crop=None, reset=False):
                 line.original_path = line.path
                 line.original_crop = [0, 0, 1, 1]
             line.path, line.crop = name, list(crop)
+        if not reset and height_scale is not None:
+            height_scale = float(height_scale)
+            if not .25 <= height_scale <= 2:
+                raise ValueError('Line height must be 25-200%.')
+            for item in project.lines if all_heights else [line]:
+                item.height_scale = height_scale
         project.save()
     except Exception:
         for key, value in old.items():
             setattr(line, key, value)
+        for item, scale in zip(project.lines,old_heights):
+            item.height_scale = scale
         if new_path:
             new_path.unlink(missing_ok=True)
         raise

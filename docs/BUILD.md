@@ -13,7 +13,7 @@ with PyInstaller, and packages an Electron portable executable with electron-bui
 It downloads the license for the exact Node.js runtime being bundled if the local
 installation does not contain it. Packaging tools and Electron may require downloads.
 
-The output is `dist/Video-Sheet-to-PDF-0.7.0-win-x64.exe`. The unpacked application
+The output is `dist/Video-Sheet-to-PDF-0.8.0-win-x64.exe`. The unpacked application
 is also available at `dist/win-unpacked/Video Sheet to PDF.exe` for verification.
 The portable application extracts at launch and stores working data under Electron's
 user-data folder (`%APPDATA%/Video Sheet to PDF/output`), outside the temporary app.
@@ -60,3 +60,10 @@ four-string TAB overlap joins, and original-panel recovery after joining.
 No signing certificate is configured. Release binaries are unsigned. Publish the
 portable EXE as a GitHub Release asset rather than adding it to Git history, and
 include its SHA-256 checksum alongside it.
+
+`npm run test:print-layout` uses an isolated profile and the local fixture
+`diagnostics/print-layout-fixture.drumscore` (ten guitar captures with source
+images). It verifies bar arrangement, print preview, line/all-line height edits,
+reset, saved-project round trips, PDF export, three languages, and mobile layout.
+Python tests use generated TAB to verify column preservation, double barlines,
+short final rows, exclusions/order, conservative fallback, page counts, and ratios.

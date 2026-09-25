@@ -23,6 +23,25 @@ function clock(seconds, decimal = false) {
 function cropArray(region) { return [region.left, region.top, region.right, region.bottom]; }
 function fitVideo() { fitMedia($('video-stage'), $('video-fit'), video.videoWidth, video.videoHeight); }
 function fitEditor() { fitMedia($('editor-stage'), $('editor-fit'), $('editor-image').naturalWidth, $('editor-image').naturalHeight); }
+function fitLine() {
+  const img=$('line-image'), stage=$('line-stage');
+  if (!img.naturalWidth || img.hidden) return;
+  const style=getComputedStyle(stage), height=img.naturalHeight*(state?.lines[selected]?.height_scale || 1);
+  const ratio=Math.min((stage.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight))/img.naturalWidth,
+    (stage.clientHeight-parseFloat(style.paddingTop)-parseFloat(style.paddingBottom))/height);
+  img.style.width=`${Math.max(1,img.naturalWidth*ratio)}px`;
+  img.style.height=`${Math.max(1,height*ratio)}px`;
+}
+function previewEdit() {
+  const image=$('editor-image'), canvas=$('edited-line-preview');
+  if (!image.naturalWidth) return;
+  const [l,t,r,b]=editorCrop.value, width=(r-l)*image.naturalWidth, height=(b-t)*image.naturalHeight;
+  const scale=Number($('line-height').value)/100;
+  if (!(scale>=.25 && scale<=2)) return;
+  const fit=Math.min(1,1200/width,100/(height*scale));
+  canvas.width=Math.max(1,Math.round(width*fit)); canvas.height=Math.max(1,Math.round(height*scale*fit));
+  canvas.getContext('2d').drawImage(image,l*image.naturalWidth,t*image.naturalHeight,width,height,0,0,canvas.width,canvas.height);
+}
 const crop = new CropSelection($('video-crop'), {
   moveInside: false,
   onStart: () => video.pause(),
@@ -30,9 +49,12 @@ const crop = new CropSelection($('video-crop'), {
 });
 const editorCrop = new CropSelection($('editor-crop'), {onChange: value => {
   ['left','top','right','bottom'].forEach((side,i) => $(`crop-${side}`).value = (value[i]*100).toFixed(1));
+  previewEdit();
 }});
 new ResizeObserver(fitVideo).observe($('video-stage'));
 new ResizeObserver(fitEditor).observe($('editor-stage'));
+new ResizeObserver(fitLine).observe($('line-stage'));
+$('line-image').addEventListener('load',fitLine);
 
 async function command(action, data = {}) {
   requesting = true;
@@ -48,6 +70,10 @@ async function refresh() {
   state = next;
   if (next.notation && next.notation !== previous?.notation) $('notation').value = next.notation;
   if (!initialized) { Object.keys(next.artifacts).forEach(key => downloaded.add(key)); initialized = true; }
+  if (job === 'print-preview' && !next.busy) {
+    if (!next.error) showPrintPreview();
+    job=null;
+  }
   if (previous?.busy && !next.busy) {
     if (job === 'extract' && !next.error) { selected = 0; setReviewAudio(false); switchTab('review'); }
     job = null;
@@ -101,6 +127,11 @@ function render() {
   $('audio-note').hidden = !state.video || state.hasAudio !== false;
   $('seek').max = Math.max(0.01, state.duration-.01);
   if (!titleDirty && document.activeElement !== $('pdf-title')) $('pdf-title').value = state.title;
+  const bars=state.barsPerLine || 0;
+  $('reflow-bars').checked=bars>0;
+  if (bars && document.activeElement !== $('bars-per-line')) $('bars-per-line').value=bars;
+  $('reflow-label').hidden=$('bars-label').hidden=!['guitar','bass'].includes(state.notation);
+  $('reflow-help').hidden=!bars;
   $('source-note').textContent = state.source || 'YouTube · MP4 · MOV · MKV · WebM · AVI';
   $('tab-count').textContent = state.lines.length;
   $('line-count').textContent = state.lines.length;
@@ -130,6 +161,7 @@ function renderLines() {
     const title = document.createElement('span'); title.textContent = `LINE ${String(index+1).padStart(2,'0')}`;
     const tick = document.createElement('span'); tick.textContent = line.included ? '✓' : '—'; head.append(title,tick);
     const img = document.createElement('img'); img.src = imageUrl(index); img.alt = ''; img.loading = 'lazy';
+    img.style.transform=`scaleY(${line.height_scale || 1})`;
     const note = document.createElement('small'); note.textContent = `${clock(line.time,true)} · ${line.view ? 'Automatic capture' : 'Manual capture'}`;
     button.append(head,img,note);
     button.addEventListener('click', () => { selected = index; renderSelection(); updateControls(); });
@@ -147,6 +179,7 @@ function renderSelection() {
     if ($('line-image').dataset.key !== key) { $('line-image').src = imageUrl(selected); $('line-image').dataset.key = key; }
     $('include-line').textContent = 'Exclude line';
     $('line-meta').textContent = `${clock(line.time,true)} · ${line.included ? 'Included in PDF' : 'Excluded from PDF'}`;
+    requestAnimationFrame(fitLine);
   }
 }
 function updateControls() {
@@ -170,6 +203,8 @@ function updateControls() {
     'undo-line':!!state?.canUndo,
     'move-down':!!line && selected<state.lines.length-1,
     'save-project':!!state?.lines.length, 'export-pdf':!!state?.lines.some(l => l.included),
+    'preview-print':!!state?.lines.some(l=>l.included), 'reflow-bars':!!state?.lines.length && ['guitar','bass'].includes(state.notation),
+    'bars-per-line':!!state?.barsPerLine,
     'for-print':true, notation:true,
   };
   for (const [id, enabled] of Object.entries(conditions)) $(id).disabled = locked || !enabled;
@@ -281,11 +316,34 @@ for (const [id,direction] of [['move-up',-1],['move-down',1]]) listen(id,'click'
   try { await command('move', {index,direction}); } catch (error) { selected = index; throw error; }
 });
 listen('save-project','click', () => { video.pause(); job = 'save'; return command('save', {title:$('pdf-title').value}); });
+async function setPrintSettings() {
+  if ($('reflow-bars').checked && !$('bars-per-line').reportValidity()) return;
+  await command('print-settings',{bars:$('reflow-bars').checked?Number($('bars-per-line').value):0});
+}
+listen('reflow-bars','change',setPrintSettings);
+listen('bars-per-line','change',setPrintSettings);
+listen('preview-print','click',()=>{video.pause();job='print-preview';return command('preview-print');});
+listen('close-print-preview','click',()=>$('print-preview').close());
+function showPrintPreview() {
+  const preview=state.printPreview;
+  if (!preview) return;
+  $('print-preview-summary').textContent=`${preview.widths.length} print lines`;
+  $('print-preview-notes').replaceChildren(...preview.notes.map(note=>{const p=document.createElement('p');p.textContent=note;return p;}));
+  $('print-preview-rows').replaceChildren(...preview.widths.map((width,index)=>{
+    const row=document.createElement('div'), label=document.createElement('span'), img=document.createElement('img');
+    label.textContent=`Line ${String(index+1).padStart(2,'0')}`;
+    img.src=api.url('print-row',{index,id:preview.id});img.alt=label.textContent;img.loading='lazy';img.style.width=`${width*100}%`;
+    row.append(label,img);return row;
+  }));
+  $('print-preview').showModal();
+}
 listen('export-pdf','click', () => { video.pause(); job = 'export'; return command('export', {title:$('pdf-title').value, paper:$('paper').value,
   gap:$('gap').value, left:$('left-margin').value, right:$('right-margin').value}); });
 listen('edit-line','click', () => {
   editorIndex = selected;
   const line = state.lines[selected];
+  $('line-height').value=String(Math.round((line.height_scale || 1)*100));
+  $('all-line-heights').checked=false;
   $('editor-title').textContent = `Edit line ${String(selected+1).padStart(2,'0')}`;
   $('editor-hint').textContent = line.source_path ? 'Drag the corners to crop or expand into the original frame. Drag inside to move the selection.' : 'This older project contains only the captured image. Crop it here; expansion is limited to its original edges.';
   $('editor-image').src = imageUrl(selected,'source');
@@ -294,6 +352,8 @@ listen('edit-line','click', () => {
   requestAnimationFrame(fitEditor);
 });
 $('editor-image').addEventListener('load', fitEditor);
+$('editor-image').addEventListener('load',previewEdit);
+listen('line-height','input',previewEdit);
 for (const id of ['close-editor','cancel-edit']) listen(id,'click', () => $('editor').close());
 for (const side of ['left','top','right','bottom']) listen(`crop-${side}`,'change', () => {
   const value = ['left','top','right','bottom'].map(s => Number($(`crop-${s}`).value)/100);
@@ -301,8 +361,9 @@ for (const side of ['left','top','right','bottom']) listen(`crop-${side}`,'chang
   else { editorCrop.set(editorCrop.value); throw new Error('Crop edges must form a rectangle within 0–100%.'); }
 });
 listen('apply-edit','click', async () => {
+  if (!$('line-height').reportValidity()) return;
   $('apply-edit').disabled = true;
-  try { await command('edit', {index:editorIndex,crop:editorCrop.value}); $('editor').close(); }
+  try { await command('edit', {index:editorIndex,crop:editorCrop.value,heightScale:Number($('line-height').value)/100,allHeights:$('all-line-heights').checked}); $('editor').close(); }
   finally { $('apply-edit').disabled = false; }
 });
 listen('reset-line','click', async () => { await command('edit', {index:editorIndex,reset:true}); $('editor').close(); });
@@ -316,7 +377,7 @@ document.addEventListener('keydown', e => {
   }
   if (
       e.target.closest('input,select,textarea,[contenteditable]:not([contenteditable="false"])') ||
-      $('editor').open || state?.busy || requesting || uploading) return;
+      $('editor').open || $('print-preview').open || state?.busy || requesting || uploading) return;
   const direction = {ArrowUp:-1, ArrowLeft:-1, ArrowDown:1, ArrowRight:1}[e.key];
   if (tab === 'review' && direction && state?.lines.length) {
     e.preventDefault();
