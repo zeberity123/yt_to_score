@@ -10,7 +10,7 @@ import pytest
 from drumscore.editing import edit_line, archive_project, open_project
 from drumscore.extract import Extraction, ScoreLine
 from drumscore.pdf import export_pdf
-from drumscore.print_layout import print_rows, tab_measures, validate_bars
+from drumscore.print_layout import print_rows, tab_measures, validate_bars, validate_bar_override
 from drumscore.vision import Region
 from test_instruments import music
 
@@ -157,3 +157,49 @@ def test_height_boundaries_and_instrument_restriction(tmp_path):
         with pytest.raises(ValueError):edit_line(project,0,height_scale=scale)
     project.notation='piano'
     with pytest.raises(ValueError,match='guitar and bass'):print_rows(project,6)
+
+
+def test_dense_line_exception_fills_width_and_preserves_all_music(tmp_path):
+    project=project_at(tmp_path,count=6)
+    original,_=print_rows(project,6)
+    project.bar_overrides[original[1].anchor]=3
+    rows,_=print_rows(project,6)
+    assert [row.bars for row in rows]==[6,3,6,3]
+    assert rows[1].width_fraction==1  # Deliberate short row enlarges the notation.
+    assert rows[-1].width_fraction==pytest.approx(.5,abs=.01)
+    np.testing.assert_array_equal(np.concatenate([np.array(r.image) for r in original],axis=1),
+                                  np.concatenate([np.array(r.image) for r in rows],axis=1))
+    project.bars_per_line=6
+    export_pdf(project,tmp_path/'exceptions.pdf')
+    with pymupdf.open(tmp_path/'exceptions.pdf') as doc:
+        boxes=[entry['bbox'] for page in doc for entry in page.get_image_info()]
+    assert boxes[0][2]-boxes[0][0]==pytest.approx(boxes[1][2]-boxes[1][0])
+    assert boxes[1][3]-boxes[1][1]>1.9*(boxes[0][3]-boxes[0][1])
+
+
+def test_exceptions_follow_music_and_round_trip_without_affecting_original_layout(tmp_path):
+    project=project_at(tmp_path/'working',count=8)
+    original,_=print_rows(project,6)
+    early,later=original[0].anchor,original[2].anchor
+    project.bar_overrides={later:2,early:4}
+    project.bars_per_line=6
+    rows,_=print_rows(project)
+    assert sum(r.bars for r in rows)==24
+    assert next(r for r in rows if r.anchor==later).bars==2
+    project.lines.reverse()
+    edit_line(project,0,height_scale=.75,all_heights=True)
+    reordered,_=print_rows(project)
+    assert next(r for r in reordered if r.anchor==later).bars==2
+    bundle=archive_project(project,tmp_path/'exceptions.drumscore')
+    reopened=open_project(bundle,tmp_path/'opened')
+    assert reopened.bar_overrides==project.bar_overrides
+    assert [r.anchor for r in print_rows(reopened)[0]]==[r.anchor for r in reordered]
+    assert len(print_rows(reopened,0)[0])==8
+    project.lines.reverse()
+    project.bar_overrides.clear()
+    assert [r.anchor for r in print_rows(project)[0]]==[r.anchor for r in original]
+
+
+@pytest.mark.parametrize('value',[-1,17,2.5,float('nan'),None])
+def test_invalid_line_exception_rejected(value):
+    with pytest.raises(ValueError):validate_bar_override(value)

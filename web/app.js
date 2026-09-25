@@ -131,7 +131,6 @@ function render() {
   $('reflow-bars').checked=bars>0;
   if (bars && document.activeElement !== $('bars-per-line')) $('bars-per-line').value=bars;
   $('reflow-label').hidden=$('bars-label').hidden=!['guitar','bass'].includes(state.notation);
-  $('reflow-help').hidden=!bars;
   $('source-note').textContent = state.source || 'YouTube · MP4 · MOV · MKV · WebM · AVI';
   $('tab-count').textContent = state.lines.length;
   $('line-count').textContent = state.lines.length;
@@ -323,8 +322,22 @@ async function setPrintSettings() {
 listen('reflow-bars','change',setPrintSettings);
 listen('bars-per-line','change',setPrintSettings);
 listen('preview-print','click',()=>{video.pause();job='print-preview';return command('preview-print');});
-listen('close-print-preview','click',()=>$('print-preview').close());
-function showPrintPreview() {
+  listen('close-print-preview','click',()=>$('print-preview').close());
+  const printDialog=$('print-preview');
+  const outsidePreview=event=>{
+    const bounds=printDialog.getBoundingClientRect();
+    return event.target===printDialog && (event.clientX<bounds.left || event.clientX>bounds.right || event.clientY<bounds.top || event.clientY>bounds.bottom);
+  };
+  let backdropDown=false;
+  printDialog.addEventListener('pointerdown',event=>{backdropDown=outsidePreview(event);});
+  printDialog.addEventListener('pointerup',event=>{
+    if (backdropDown && outsidePreview(event)) printDialog.close();
+    backdropDown=false;
+  });
+  printDialog.addEventListener('pointercancel',()=>{backdropDown=false;});
+  let previewFocus=null;
+  printDialog.addEventListener('close',()=>{if(job==='print-preview') job=null;previewFocus=null;});
+  function showPrintPreview() {
   const preview=state.printPreview;
   if (!preview) return;
   $('print-preview-summary').textContent=`${preview.widths.length} print lines`;
@@ -332,10 +345,35 @@ function showPrintPreview() {
   $('print-preview-rows').replaceChildren(...preview.widths.map((width,index)=>{
     const row=document.createElement('div'), label=document.createElement('span'), img=document.createElement('img');
     label.textContent=`Line ${String(index+1).padStart(2,'0')}`;
-    img.src=api.url('print-row',{index,id:preview.id});img.alt=label.textContent;img.loading='lazy';img.style.width=`${width*100}%`;
-    row.append(label,img);return row;
-  }));
-  $('print-preview').showModal();
+      img.src=api.url('print-row',{index,id:preview.id});img.alt=label.textContent;img.loading='lazy';img.style.width=`${width*100}%`;
+      [img.width,img.height]=preview.sizes[index];
+      const header=document.createElement('div');header.className='print-row-header';header.append(label);
+      if (preview.anchors[index]) {
+        const field=document.createElement('label'), caption=document.createElement('span'), select=document.createElement('select');
+        caption.textContent='Bars on this line';
+        select.setAttribute('aria-label',`Bars on line ${index+1}`);
+        select.dataset.anchor=preview.anchors[index];
+        select.add(new Option(`Default (${state.barsPerLine})`,'0'));
+        for (let bars=1;bars<=16;bars++) select.add(new Option(String(bars),String(bars)));
+        select.value=String(preview.overrides[index]);
+        select.addEventListener('change',async()=>{
+          previewFocus={anchor:preview.anchors[index],top:select.getBoundingClientRect().top};
+          $('print-preview-rows').querySelectorAll('select').forEach(input=>{input.disabled=true;});
+          try {
+            await command('print-line-bars',{anchor:preview.anchors[index],bars:Number(select.value)});
+            job='print-preview';await command('preview-print');
+          } catch(error) {job=null;fail(error);$('print-preview-rows').querySelectorAll('select').forEach(input=>{input.disabled=false;});}
+        });
+        field.append(caption,select);header.append(field);
+      }
+      row.append(header,img);return row;
+    }));
+    if (!printDialog.open) printDialog.showModal();
+    if (previewFocus) {
+      const select=printDialog.querySelector(`select[data-anchor="${previewFocus.anchor}"]`);
+      if (select) {printDialog.scrollTop+=select.getBoundingClientRect().top-previewFocus.top;select.focus({preventScroll:true});}
+      previewFocus=null;
+    }
 }
 listen('export-pdf','click', () => { video.pause(); job = 'export'; return command('export', {title:$('pdf-title').value, paper:$('paper').value,
   gap:$('gap').value, left:$('left-margin').value, right:$('right-margin').value}); });

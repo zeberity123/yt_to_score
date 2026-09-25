@@ -1,4 +1,4 @@
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import json
 from pathlib import Path
 import uuid
@@ -36,11 +36,13 @@ class Extraction:
     warnings: list[str]
     notation: str = 'staff'
     bars_per_line: int = 0
+    bar_overrides: dict[str, int] = field(default_factory=dict)
 
     def save(self):
         data = {"version": 1, "title": self.title, "source": self.source,
                 "region": asdict(self.region), "lines": [asdict(line) for line in self.lines],
-                "warnings": self.warnings, "notation": self.notation, "bars_per_line": self.bars_per_line}
+                "warnings": self.warnings, "notation": self.notation, "bars_per_line": self.bars_per_line,
+                "bar_overrides": self.bar_overrides}
         temp = self.directory / "project.tmp"
         try:
             temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -56,7 +58,7 @@ class Extraction:
             raise ValueError("Unsupported project version.")
         return cls(filename.parent, data["title"], data["source"], Region(**data["region"]),
                    [ScoreLine(**line) for line in data["lines"]], data.get("warnings", []), data.get('notation', 'staff'),
-                   data.get('bars_per_line', 0))
+                   data.get('bars_per_line', 0), data.get('bar_overrides', {}))
 
 
 def extract(path, destination, title="Sheet music", source="", region=None, mode="auto",

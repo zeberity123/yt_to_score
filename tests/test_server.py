@@ -154,3 +154,29 @@ def test_upload_preserves_title_and_invalid_bundle_returns_error(server):
         request(server, '/api/command', {'action':'open','path':path})
     assert error.value.code == 400
     assert 'zip' in json.load(error.value)['error'].lower()
+
+
+def test_print_exception_rejects_stale_anchor_and_rolls_back_failed_save(server,monkeypatch):
+    from test_print_layout import project_at
+    from drumscore.print_layout import print_rows
+    workspace=server.workspace
+    project=project_at(workspace.output/'tabs')
+    project.bars_per_line=6
+    workspace.projects[workspace.mode]=project
+    anchor=print_rows(project)[0][0].anchor
+    workspace.print_preview={'anchors':[anchor]}
+    with pytest.raises(ValueError):workspace.command('print-line-bars',{'anchor':'stale','bars':3})
+    with pytest.raises(ValueError):workspace.command('print-line-bars',{'anchor':anchor,'bars':17})
+    assert project.bar_overrides=={}
+    def fail():raise OSError('Disk full')
+    with monkeypatch.context() as patch:
+        patch.setattr(project,'save',fail)
+        with pytest.raises(OSError):workspace.command('print-line-bars',{'anchor':anchor,'bars':3})
+    assert project.bar_overrides=={}
+    assert workspace.print_preview is not None
+    workspace.command('print-line-bars',{'anchor':anchor,'bars':3})
+    assert project.bar_overrides=={anchor:3}
+    assert workspace.print_preview is None
+    workspace.print_preview={'anchors':[anchor]}
+    workspace.command('print-line-bars',{'anchor':anchor,'bars':0})
+    assert project.bar_overrides=={}

@@ -7,8 +7,8 @@ and print output. Capture, review, crop editing, and phone layouts share the sam
 
 ## Start
 
-For Windows x64, download `Video-Sheet-to-PDF-0.8.0-win-x64.exe` from the
-[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.8.0)
+For Windows x64, download `Video-Sheet-to-PDF-0.9.0-win-x64.exe` from the
+[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.9.0)
 and double-click it. This portable executable includes Python, FFmpeg, and Node.js;
 no separate installation is needed. The first launch extracts the bundled app.
 Working projects and cached videos are stored under
@@ -104,6 +104,14 @@ all image columns are retained. Double barlines count as one boundary. Uncertain
 or combined staff/TAB lines stay intact and are listed in the preview notes.
 Short final rows are not stretched to fill the page. Turning the option off
 returns to one captured image per print line.
+
+For dense passages, use **Bars on this line** in the print preview to choose
+1–16 bars for that individual row. Try 3 or 4 instead of 6 when the notes become
+too small. A completed exception row uses the full print width. Select **Default**
+to remove the exception. Exceptions follow their starting bar when earlier rows
+change, and are saved with the project and used in the PDF. Changing a source
+crop requires setting its exceptions again; height changes preserve them.
+Click outside the preview or press Escape to close it.
 
 In **Edit crop**, adjust **Line height (%)** to correct vertically stretched
 notation. 100% is the original ratio; 75% reduces only the height. The range is

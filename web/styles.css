@@ -75,4 +75,9 @@ dialog{border:1px solid #dae1d0;border-radius:18px;background:var(--paper);color
 #print-preview-rows span{display:block;font-size:10px;color:#666;margin-bottom:5px}
 #print-preview-rows img{display:block;height:auto;max-width:100%}
 #print-preview-notes:empty{display:none}
+#editor .crop-fields input,#editor .ratio-controls .field-label input{margin-top:14px}
+.print-row-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.print-row-header label{display:flex;align-items:center;gap:10px}
+#print-preview-rows .print-row-header span{font-size:12px;margin:0;color:#505858}
+.print-row-header select{width:auto;min-width:110px;min-height:36px;background:#f4f7f6;color:#203c36;border:1px solid #aabbb6;padding:6px 10px}
 @media(max-width:760px){.print-layout-controls{gap:12px}.print-layout-controls button{width:100%;margin:0}.ratio-controls{gap:12px}.ratio-controls .help{max-width:100%}#editor .editor-stage{height:28dvh}.edited-preview{max-height:120px}}

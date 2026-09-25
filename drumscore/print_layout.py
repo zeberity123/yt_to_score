@@ -1,5 +1,7 @@
 """Arrange captured TAB measures without modifying the captured images."""
 from dataclasses import dataclass
+import hashlib
+import json
 
 import cv2
 import numpy as np
@@ -16,6 +18,8 @@ class PrintRow:
     bars: int | None = None
     # Short final rows retain the same notation size as the complete rows.
     width_fraction: float = 1.0
+    anchor: str | None = None
+    target: int = 0
 
 
 def validate_bars(value):
@@ -26,6 +30,23 @@ def validate_bars(value):
     if number != 0 and not (4 <= number <= 16 and number.is_integer()):
         raise ValueError('Bars per line must be 4-16, or 0 for captured lines.')
     return int(number)
+
+
+def validate_bar_override(value):
+    try:
+        number = float(value)
+    except (ValueError, TypeError):
+        raise ValueError('Line bars must be 1-16, or 0 for the default.') from None
+    if not (0 <= number <= 16 and number.is_integer()):
+        raise ValueError('Line bars must be 1-16, or 0 for the default.')
+    return int(number)
+
+
+def measure_anchor(line, left, right):
+    # Relative source identity survives archive/open, reordering and height edits.
+    # A changed crop gets a new identity instead of moving an exception to other notes.
+    identity = [line.original_path or line.path, line.time, line.view, line.crop, left, right]
+    return hashlib.sha256(json.dumps(identity, separators=(',', ':')).encode()).hexdigest()[:24]
 
 
 def tab_measures(image, rules):
@@ -75,6 +96,9 @@ def print_rows(project,bars_per_line=None):
         raise ValueError('Bar layout is available for guitar and bass TAB.')
     rows, pending, notes = [], [], []
     pending_scale=1.0
+    pending_anchor=None
+    pending_target=target
+    overrides={key:validate_bar_override(value) for key,value in project.bar_overrides.items()} if target else {}
     def flush():
         if not pending:
             return
@@ -85,7 +109,7 @@ def print_rows(project,bars_per_line=None):
         for image,anchor in pending:
             result.paste(image,(x,above-anchor))
             x+=image.width
-        rows.append(PrintRow(result,pending_scale,len(pending)))
+        rows.append(PrintRow(result,pending_scale,len(pending),anchor=pending_anchor,target=pending_target))
         pending.clear()
     for index,line in enumerate(project.lines):
         if not line.included:
@@ -110,17 +134,25 @@ def print_rows(project,bars_per_line=None):
         # stays separate so it is neither lost nor compounded by a second edit.
         factor=24/spacing
         for left,right in cuts:
+            anchor=measure_anchor(line,left,right)
+            # An exception is also a line break, anchored to the actual music.
+            # Earlier exceptions cannot swallow a later exception as rows shift.
+            if overrides.get(anchor):
+                flush()
+            if not pending:
+                pending_anchor=anchor
+                pending_target=overrides.get(anchor) or target
             part=image.crop((left,0,right,image.height))
             size=(max(1,round(part.width*factor)),max(1,round(part.height*factor)))
             if size != part.size:
                 part=part.resize(size,Image.Resampling.LANCZOS)
             pending.append((part,round(first*factor)))
-            if len(pending)==target:
+            if len(pending)==pending_target:
                 flush()
     flush()
-    complete=[row.image.width for row in rows if row.bars == target]
+    complete=[row.image.width for row in rows if row.bars == target and row.target == target]
     reference=float(np.median(complete)) if complete else max((row.image.width for row in rows if row.bars),default=1)
     for row in rows:
-        if row.bars and row.bars < target:
+        if row.bars and row.bars < row.target:
             row.width_fraction=min(1,row.image.width/reference)
     return rows,notes

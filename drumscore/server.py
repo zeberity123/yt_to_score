@@ -23,7 +23,7 @@ from .editing import archive_project, edit_line, open_project, project_file, saf
 from .extract import extract
 from .manual import append_line, new_manual_project
 from .pdf import export_pdf
-from .print_layout import print_rows, validate_bars
+from .print_layout import print_rows, validate_bars, validate_bar_override
 from .video import Cancelled, audio_codec, check_cancel, download, ffmpeg_path, metadata, preview
 from .vision import Region, auto_region
 from .notation import NOTATIONS, clean_notation, split_notation
@@ -302,6 +302,25 @@ class Workspace:
                 except Exception:
                     self.project.bars_per_line=old
                     raise
+            elif action == 'print-line-bars':
+                if not self.project or not self.project.bars_per_line or not self.print_preview:
+                    raise ValueError('Open the print preview first.')
+                anchor=str(data.get('anchor',''))
+                if not anchor or anchor not in self.print_preview['anchors']:
+                    raise ValueError('Open the print preview first.')
+                bars=validate_bar_override(data.get('bars'))
+                old=self.project.bar_overrides.copy()
+                if bars:
+                    self.project.bar_overrides[anchor]=bars
+                else:
+                    self.project.bar_overrides.pop(anchor,None)
+                try:
+                    self.project.save()
+                except Exception:
+                    self.project.bar_overrides=old
+                    raise
+                self.print_preview=None
+                self.print_images=[]
             elif action == 'preview-print':
                 if not self.project:
                     raise ValueError('Capture lines or open a project first.')
@@ -310,10 +329,12 @@ class Workspace:
                     from PIL import Image
                     rows,notes=print_rows(project)
                     images=[]
+                    sizes=[]
                     for row in rows:
                         check_cancel(self.cancel)
                         factor=min(1,1200/row.image.width,900/(row.image.height*row.height_scale))
                         size=(max(1,round(row.image.width*factor)),max(1,round(row.image.height*factor*row.height_scale)))
+                        sizes.append(size)
                         with row.image:
                             thumb=row.image.resize(size,Image.Resampling.LANCZOS)
                             buffer=io.BytesIO()
@@ -322,7 +343,9 @@ class Workspace:
                     with self.lock:
                         self.print_images=images
                         self.print_preview={'id':uuid.uuid4().hex,'widths':[row.width_fraction for row in rows],
-                                            'bars':[row.bars for row in rows],'notes':notes}
+                                            'bars':[row.bars for row in rows],'notes':notes,'sizes':sizes,
+                                              'anchors':[row.anchor for row in rows],
+                                              'overrides':[project.bar_overrides.get(row.anchor,0) for row in rows]}
                         self.status=f'{len(rows)} print lines ready.'
                 self.start(task)
             elif action in ('remove', 'undo', 'include', 'move', 'edit', 'save', 'export'):
