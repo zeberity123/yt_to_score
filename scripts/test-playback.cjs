@@ -71,6 +71,12 @@ const assert = require('node:assert/strict');
     await page.locator('#seek').fill('2.5');
     await page.waitForFunction(() => !document.querySelector('video').seeking);
     assert.ok(Math.abs(await page.locator('video').evaluate(v => v.currentTime)-2.5)<.1);
+    await page.locator('#add-line').focus();
+    await page.keyboard.press('Space');
+    assert.equal(await page.locator('video').evaluate(v => v.paused),false);
+    await page.keyboard.press('Space');
+    assert.equal(await page.locator('video').evaluate(v => v.paused),true);
+    assert.equal(await page.locator('#manual-count').textContent(),'0');
     await page.locator('#speed').selectOption('1.5');
     assert.equal(await page.locator('video').evaluate(v => v.playbackRate),1.5);
     for (const speed of ['2.5','3']) {
@@ -85,10 +91,9 @@ const assert = require('node:assert/strict');
     await page.waitForFunction(() => document.querySelector('#manual-count').textContent === '1');
     await page.screenshot({path:path.join(diagnostics,'audio-layout-manual.png')});
     await page.locator('#review-tab').click();
-    assert.equal(await page.locator('video').evaluate(v => v.paused),true);
-    assert.equal(await page.locator('#review-audio').isChecked(),false);
-    assert.equal(await page.locator('#review-play').isDisabled(),true);
-    await page.locator('#review-audio').check();
+    assert.equal(await page.locator('video').evaluate(v => v.paused),false);
+    assert.equal(await page.locator('#review-audio').isChecked(),true);
+    assert.equal(await page.locator('#review-play').isDisabled(),false);
     await page.waitForFunction(() => !document.querySelector('video').paused);
     const reviewTime = await page.locator('video').evaluate(v => v.currentTime);
     await page.waitForFunction(time => document.querySelector('video').currentTime > time + .15, reviewTime);
@@ -122,7 +127,34 @@ const assert = require('node:assert/strict');
     await page.keyboard.press('ArrowLeft'); await assertLine(1);
     await page.keyboard.press('ArrowUp'); await assertLine(1);
     assert.equal(await page.locator('.line-item').first().evaluate(el => el === document.activeElement),true);
+    assert.equal(await page.locator('.line-item').first().evaluate(el => getComputedStyle(el).outlineStyle),'none');
+    // Space controls playback instead of clicking focused thumbnails or destructive buttons.
+    await page.keyboard.press('Space');
+    assert.equal(await page.locator('video').evaluate(v => v.paused),false);
+    assert.equal(await page.locator('#review-audio').isChecked(),true);
+    await page.locator('#include-line').focus();
+    await page.keyboard.press('Space');
+    assert.equal(await page.locator('video').evaluate(v => v.paused),true);
+    assert.equal(await page.locator('.line-item').count(),3);
+    await page.locator('#include-line').click();
+    await page.waitForFunction(() => document.querySelectorAll('.line-item').length === 2);
+    for (const count of [1,0]) {
+      await page.locator('#include-line').click();
+      await page.waitForFunction(n => document.querySelectorAll('.line-item').length === n,count);
+    }
+    assert.equal(await page.locator('#include-line').isDisabled(),true);
+    for (const count of [1,2,3]) {
+      await page.locator('#undo-line').click();
+      await page.waitForFunction(n => document.querySelectorAll('.line-item').length === n,count);
+    }
+    assert.equal(await page.locator('#undo-line').isDisabled(),true);
+    await page.locator('.line-item').first().click();
     await page.locator('#pdf-title').focus();
+    await page.locator('#pdf-title').fill('A');
+    await page.keyboard.press('End');
+    await page.keyboard.press('Space');
+    assert.equal(await page.locator('#pdf-title').inputValue(),'A ');
+    assert.equal(await page.locator('video').evaluate(v => v.paused),true);
     await page.keyboard.press('ArrowRight'); await assertLine(1);
     await page.locator('#gap').fill('1.5');
     await page.keyboard.press('ArrowUp'); await assertLine(1);
@@ -152,6 +184,6 @@ const assert = require('node:assert/strict');
     assert.equal(await page.locator('#mute').isDisabled(),true);
     assert.equal(await page.locator('#keep-review-audio').isDisabled(),true);
     assert.deepEqual(errors,[]);
-    console.log('Passed: decoded audio, mute, volume, speeds through 3x, opt-in review playback, arrow selection and input guards, both modes, fixed widths, seeking, capture, silent source, mobile layout.');
+    console.log('Passed: decoded audio, speed, default review playback, global Space, single selection outline, remove/undo, input guards, both modes, capture, silent source, mobile layout.');
   } finally { await app.close(); }
 })().catch(error => { console.error(error); process.exitCode=1; });

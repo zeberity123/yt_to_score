@@ -12,7 +12,13 @@ if (profile || app.isPackaged) {
   fs.mkdirSync(userData, {recursive:true});
   app.setPath('userData', userData);
 }
-let backend, window, origin;
+let backend, window, origin, exportSession;
+function cleanExportSession() {
+  if (!exportSession) return;
+  const target = path.resolve(exportSession.path);
+  if (path.dirname(target) !== path.resolve(exportSession.root) || !path.basename(target).startsWith('session-')) return;
+  try { fs.rmSync(target, {recursive:true,force:true,maxRetries:3,retryDelay:100}); } catch {}
+}
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) app.quit();
 else {
@@ -33,9 +39,13 @@ async function start() {
     backendEnv.DRUMSCORE_OUTPUT = path.join(app.getPath('userData'), 'output');
     backendEnv.DRUMSCORE_NODE = path.join(process.resourcesPath, 'runtime', 'node.exe');
   }
+  const exportsRoot = path.join(backendEnv.DRUMSCORE_OUTPUT || path.join(root,'output'), 'exports');
+  exportSession = {root:exportsRoot,path:path.join(exportsRoot, `session-${crypto.randomUUID()}`)};
+  backendEnv.DRUMSCORE_EXPORTS = exportSession.path;
   backend = spawn(python, app.isPackaged ? [] : ['-m','drumscore.server'], {
     cwd:app.isPackaged ? app.getPath('userData') : root, windowsHide:true,
     env:backendEnv, stdio:['ignore','pipe','pipe']});
+  backend.once('exit', cleanExportSession);
   let errors = '';
   backend.stderr.on('data', chunk => { errors = (errors+chunk.toString()).slice(-4000); });
   const port = await new Promise((resolve,reject) => {
@@ -57,6 +67,13 @@ async function start() {
   window.webContents.session.setPermissionRequestHandler((_contents,_permission,callback) => callback(false));
   window.webContents.session.on('will-download', (_event,item) => {
     item.setSaveDialogOptions({defaultPath:path.join(app.getPath('downloads'), item.getFilename())});
+    const url = new URL(item.getURL());
+    if (url.origin === origin && url.pathname === '/api/download') {
+      item.once('done', () => {
+        fetch(`${origin}/api/command`, {method:'POST', headers:{'Content-Type':'application/json','X-Session-Token':token},
+          body:JSON.stringify({action:'release-artifact',id:url.searchParams.get('id')})}).catch(() => {});
+      });
+    }
   });
   ipcMain.handle('choose-file', async (event,kind) => {
     if (event.sender !== window?.webContents || event.senderFrame !== event.sender.mainFrame || new URL(event.senderFrame.url).origin !== origin) throw new Error('Invalid caller.');
@@ -69,7 +86,10 @@ async function start() {
 }
 app.on('before-quit', () => {
   if (backend && !backend.killed && backend.exitCode === null) {
-    if (process.platform === 'win32') spawnSync('taskkill', ['/pid',String(backend.pid),'/t','/f'], {windowsHide:true,stdio:'ignore'});
+    if (process.platform === 'win32') {
+      const result = spawnSync('taskkill', ['/pid',String(backend.pid),'/t','/f'], {windowsHide:true,stdio:'ignore'});
+      if (result.status === 0) cleanExportSession();
+    }
     else backend.kill();
   }
 });

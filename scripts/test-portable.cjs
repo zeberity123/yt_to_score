@@ -58,12 +58,32 @@ const assert = require('node:assert/strict');
     await page.screenshot({path:path.join(root,'diagnostics','portable-release.png')});
     assert.equal(await page.locator('#error').isVisible(),false);
     assert.ok(fs.readdirSync(path.join(profile,'output')).some(name => name.startsWith('manual_')));
+    // Leave an undownloaded export staged, as if the app closes during a save dialog.
+    await page.route('**/api/state', route => route.abort());
+    await page.evaluate(async () => {
+      const response = await fetch('/api/command', {method:'POST',
+        headers:{'Content-Type':'application/json','X-Session-Token':sessionStorage.getItem('drum-session')},
+        body:JSON.stringify({action:'save',title:'Shutdown cleanup'})});
+      if (!response.ok) throw new Error('Could not prepare shutdown-cleanup check.');
+    });
+    const exportsRoot = path.join(profile,'output','exports');
+    const stageDeadline = Date.now()+10000;
+    let staged = false;
+    while (Date.now()<stageDeadline) {
+      const entries = fs.existsSync(exportsRoot) ? fs.readdirSync(exportsRoot,{recursive:true}) : [];
+      staged = entries.some(name => name.endsWith('.drumscore'));
+      if (staged) break;
+      await new Promise(resolve => setTimeout(resolve,100));
+    }
+    assert.ok(staged,'Export should be staged before shutdown.');
     const session = await browser.newBrowserCDPSession();
-    console.log('Passed: single EXE launch, isolated persistent data, video/audio conversion and capture without system Python/Node/FFmpeg, defaults and print preset.');
     const exited = new Promise(resolve => child.once('exit',resolve));
     session.send('Browser.close').catch(() => {});
     await Promise.race([exited,new Promise(resolve => setTimeout(resolve,5000))]);
     browser = null;
+    assert.ok(!fs.existsSync(exportsRoot) || !fs.readdirSync(exportsRoot).some(name => name.startsWith('session-')));
+    assert.ok(fs.readdirSync(path.join(profile,'output')).some(name => name.startsWith('manual_')));
+    console.log('Passed: single EXE, bundled conversion, capture, defaults, print preset, and shutdown cleanup without deleting working projects.');
   } finally {
     if (browser) {
       try { const session = await browser.newBrowserCDPSession(); await session.send('Browser.close'); } catch {}

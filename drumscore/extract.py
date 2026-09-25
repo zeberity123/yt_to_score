@@ -37,8 +37,11 @@ class Extraction:
                 "region": asdict(self.region), "lines": [asdict(line) for line in self.lines],
                 "warnings": self.warnings}
         temp = self.directory / "project.tmp"
-        temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        temp.replace(self.directory / "project.json")
+        try:
+            temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            temp.replace(self.directory / "project.json")
+        finally:
+            temp.unlink(missing_ok=True)
 
     @classmethod
     def load(cls, filename):

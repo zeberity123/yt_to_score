@@ -30,6 +30,8 @@ const assert = require('node:assert/strict');
     await page.locator('#end').fill('15');
     await page.locator('#extract').click();
     await page.waitForFunction(() => !document.querySelector('#review-screen').hidden, null, {timeout:60000});
+    assert.equal(await page.locator('#review-audio').isChecked(),false);
+    assert.equal(await page.locator('video').evaluate(node => node.paused),true);
     assert.ok(await page.locator('.line-item').count());
     await page.locator('#edit-line').click();
     await page.waitForFunction(() => document.querySelector('#editor-image').naturalWidth > 0);
@@ -51,7 +53,6 @@ const assert = require('node:assert/strict');
     assert.equal(await page.locator('#right-margin').inputValue(),'12');
     const downloads = [];
     await app.evaluate(({session}, folder) => {
-      session.defaultSession.removeAllListeners('will-download');
       session.defaultSession.on('will-download', (_event,item) => { item.setSavePath(`${folder}/${item.getFilename()}`); });
     }, path.join(root,'diagnostics'));
     page.on('download', download => downloads.push(download));
@@ -60,6 +61,10 @@ const assert = require('node:assert/strict');
     await page.locator('#export-pdf').click();
     await page.waitForFunction(() => document.querySelector('#status').textContent.includes('Desktop test score.pdf'));
     await page.waitForFunction(() => !document.querySelector('#export-pdf').disabled);
+    await page.waitForFunction(async () => {
+      const response = await fetch('/api/state', {headers:{'X-Session-Token':sessionStorage.getItem('drum-session')}});
+      return Object.keys((await response.json()).artifacts).length === 0;
+    });
     await screenshot('electron-review');
     await page.locator('#capture-tab').click();
     await page.locator('#manual').click();
@@ -75,7 +80,8 @@ const assert = require('node:assert/strict');
     await page.locator('#play').click();
     await page.waitForFunction(() => !document.querySelector('video').paused);
     await page.locator('#review-tab').click();
-    assert.ok(await page.locator('video').evaluate(node => node.paused));
+    assert.equal(await page.locator('#review-audio').isChecked(),true);
+    assert.equal(await page.locator('video').evaluate(node => node.paused),false);
     await page.setViewportSize({width:390,height:844});
     await screenshot('electron-mobile-review');
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -93,6 +99,17 @@ const assert = require('node:assert/strict');
     await page.locator('#capture-tab').click();
     await screenshot('electron-mobile-capture');
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    if (process.env.SCORE_TEST_YOUTUBE) {
+      await page.locator('#source').fill(process.env.SCORE_TEST_YOUTUBE);
+      await page.locator('#load-video').click();
+      await page.waitForFunction(() => !document.querySelector('#load-video').disabled &&
+        (document.querySelector('#status').textContent.includes('Video ready') || !document.querySelector('#error').hidden), null, {timeout:180000});
+      assert.equal(await page.locator('#error').isVisible(),false,await page.locator('#error-text').textContent());
+      await page.waitForFunction(() => document.querySelector('video').readyState >= 2);
+      assert.equal(await page.locator('#review-audio').isChecked(),true);
+      assert.equal(await page.locator('#tab-count').textContent(),'0');
+      console.log('Passed: loading the reported YouTube video after export in the same app session.');
+    }
     assert.deepEqual(errors, []);
     console.log('Passed: Electron load, automatic extraction, crop edit/reset, title-named project/PDF, manual capture/playback, mobile layout.');
   } catch (error) {

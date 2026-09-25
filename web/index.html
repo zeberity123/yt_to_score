@@ -39,7 +39,7 @@
           <div class="volume-heading"><label for="volume">Volume</label><output id="volume-value" for="volume">70%</output></div>
           <div class="volume-controls"><button id="mute" aria-pressed="false" aria-label="Mute audio">Mute</button><input id="volume" type="range" min="0" max="100" step="1" value="70" aria-label="Volume"></div>
           <p id="audio-note" class="help" hidden>No audio track in this file.</p>
-          <label class="check-row"><input type="checkbox" id="keep-review-audio"><span>Audio in Review & export</span></label>
+          <label class="check-row"><input type="checkbox" id="keep-review-audio" checked><span>Audio in Review & export</span></label>
         </section>
       </aside>
       <div class="video-workspace">
@@ -55,10 +55,10 @@
       <div class="review-main">
         <div class="review-heading"><h1 id="preview-title">Line preview</h1><button id="edit-line">Edit crop <span aria-hidden="true">⌗</span></button></div>
         <div id="line-stage" class="line-stage"><div id="line-empty" class="empty-state"><div class="staff-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><b>♪</b></div><h2>No score lines yet</h2><p>Capture lines or open a saved project.<br>Select a line to inspect, crop, or expand it.</p></div><img id="line-image" alt="Selected score line" hidden></div>
-        <div class="line-actions"><div class="button-row"><button id="include-line">Exclude line</button><button id="move-up" aria-label="Move selected line up">↑ Move up</button><button id="move-down" aria-label="Move selected line down">↓ Move down</button></div><span id="line-meta" class="help">Exported in the order shown on the left.</span></div>
+        <div class="line-actions"><div class="button-row"><button id="include-line">Exclude line</button><button id="undo-line" title="Restore the last removed line">Undo</button><button id="move-up" aria-label="Move selected line up">↑ Move up</button><button id="move-down" aria-label="Move selected line down">↓ Move down</button></div><span id="line-meta" class="help">Exported in the order shown on the left.</span></div>
         <details id="warnings" hidden><summary>Extraction notes</summary><ul id="warning-list"></ul></details>
         <div class="review-playback" aria-label="Review audio">
-          <label class="check-row"><input type="checkbox" id="review-audio"><span>Audio in review</span></label>
+          <label class="check-row"><input type="checkbox" id="review-audio" checked><span>Audio in review</span></label>
           <button id="review-play">▶ Play</button><select id="review-speed" aria-label="Review playback speed"></select>
         </div>
         <section class="export-card" aria-label="PDF settings">

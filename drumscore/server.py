@@ -33,6 +33,9 @@ class Workspace:
     def __init__(self, output=None):
         self.output = Path(output or os.environ.get('DRUMSCORE_OUTPUT') or ROOT / 'output')
         self.output.mkdir(parents=True, exist_ok=True)
+        self.export_root = Path(os.environ.get('DRUMSCORE_EXPORTS') or self.output/'exports').resolve()
+        if not self.export_root.is_relative_to((self.output/'exports').resolve()):
+            raise ValueError('Export staging must stay inside the workspace export folder.')
         self.lock = threading.RLock()
         self.cancel = threading.Event()
         self.busy = False
@@ -51,6 +54,7 @@ class Workspace:
         self.title = 'Sheet music'
         self.region = Region()
         self.artifacts = {}
+        self.removed = {'automatic': [], 'manual': []}
 
     @property
     def project(self):
@@ -64,6 +68,8 @@ class Workspace:
                     'title': self.title, 'video': bool(self.media), 'videoId': self.video_id,
                     'projectId': project.directory.name if project else None, 'duration': self.duration,
                     'hasAudio': self.has_audio,
+                    'canUndo': bool(self.removed[self.mode]),
+                    'undoIndex': self.removed[self.mode][-1][0] if self.removed[self.mode] else None,
                     'region': asdict(self.region), 'source': Path(self.video).name if self.video else '',
                     'lines': [asdict(line) for line in project.lines] if project else [],
                     'warnings': project.warnings if project else [], 'artifacts': self.artifacts.copy()}
@@ -142,6 +148,9 @@ class Workspace:
 
     def command(self, action, data):
         with self.lock:
+            if action == 'release-artifact':
+                self.release_artifact(str(data['id']))
+                return
             if action == 'cancel':
                 self.cancel.set()
                 return
@@ -164,6 +173,7 @@ class Workspace:
                         self.duration, self.title, self.region = duration, title, region
                         self.has_audio = sound_codec is not None
                         self.projects = {'automatic': None, 'manual': None}
+                        self.removed = {'automatic': [], 'manual': []}
                         self.status = 'Video ready. Drag on the video to select your score.'
                 self.start(task)
             elif action == 'mode':
@@ -190,6 +200,7 @@ class Workspace:
                                       remove_overlap=bool(data.get('overlap', True)), progress=self.report, cancel=self.cancel)
                     with self.lock:
                         self.projects['automatic'] = project
+                        self.removed['automatic'] = []
                         self.mode = 'automatic'
                         self.status = f'{len(project.lines)} score lines ready to review.'
                 self.start(task)
@@ -228,17 +239,54 @@ class Workspace:
             elif action == 'open':
                 project = open_project(data['path'], self.output)
                 self.projects = {'automatic': project, 'manual': None}
+                self.removed = {'automatic': [], 'manual': []}
+                # Older projects stored exclusions in the list. Present them as removed,
+                # while allowing Undo to bring them back under the new interaction.
+                visible = []
+                for line in project.lines:
+                    if line.included:
+                        visible.append(line)
+                    else:
+                        line.included = True
+                        self.removed['automatic'].append((len(visible), line))
+                project.lines = visible
                 self.mode, self.title = 'automatic', project.title
                 self.video = self.media = None
                 self.video_id = None
                 self.duration = 0
                 self.has_audio = False
                 self.status = 'Project opened. Your crops and original images are available.'
-            elif action in ('include', 'move', 'edit', 'save', 'export'):
+            elif action in ('remove', 'undo', 'include', 'move', 'edit', 'save', 'export'):
                 if not self.project:
                     raise ValueError('Capture lines or open a project first.')
                 project = self.project
-                if action in ('include', 'move', 'edit'):
+                if action == 'undo':
+                    history = self.removed[self.mode]
+                    if not history:
+                        raise ValueError('No removed line to restore.')
+                    index, line = history[-1]
+                    index = min(index, len(project.lines))
+                    project.lines.insert(index, line)
+                    try:
+                        project.save()
+                    except Exception:
+                        project.lines.pop(index)
+                        raise
+                    history.pop()
+                    self.status = 'Line restored.'
+                elif action == 'remove':
+                    index = int(data['index'])
+                    if not 0 <= index < len(project.lines):
+                        raise ValueError('Select a score line first.')
+                    line = project.lines.pop(index)
+                    try:
+                        project.save()
+                    except Exception:
+                        project.lines.insert(index, line)
+                        raise
+                    self.removed[self.mode].append((index, line))
+                    self.status = 'Line removed. Use Undo to restore it.'
+                elif action in ('include', 'move', 'edit'):
                     index = int(data['index'])
                     if not 0 <= index < len(project.lines):
                         raise ValueError('Select a score line first.')
@@ -258,15 +306,21 @@ class Workspace:
                     self.title = project.title = title
                     key = uuid.uuid4().hex
                     suffix = '.drumscore' if action == 'save' else '.pdf'
-                    destination = self.output/'exports'/key/(safe_name(title)+suffix)
+                    destination = self.export_root/key/(safe_name(title)+suffix)
                     def task():
-                        if action == 'save':
-                            archive_project(project, destination)
-                        else:
-                            project.save()
-                            export_pdf(project, destination, paper=data.get('paper', 'A4'),
-                                       gap_mm=float(data.get('gap', 0)), left_margin_mm=float(data.get('left', 3)),
-                                       right_margin_mm=float(data.get('right', 3)))
+                        try:
+                            if action == 'save':
+                                archive_project(project, destination)
+                            else:
+                                project.save()
+                                export_pdf(project, destination, paper=data.get('paper', 'A4'),
+                                           gap_mm=float(data.get('gap', 0)), left_margin_mm=float(data.get('left', 3)),
+                                           right_margin_mm=float(data.get('right', 3)))
+                        except Exception:
+                            destination.unlink(missing_ok=True)
+                            if destination.parent.is_dir() and not any(destination.parent.iterdir()):
+                                destination.parent.rmdir()
+                            raise
                         with self.lock:
                             self.artifacts[key] = {'name': destination.name, 'kind': action, 'path': str(destination)}
                             self.status = f'Ready to save: {destination.name}'
@@ -278,6 +332,18 @@ class Workspace:
     def require_video(self):
         if self.video is None:
             raise ValueError('Load a video first.')
+
+    def release_artifact(self, key):
+        """Remove only this session's staged download, never the user's saved copy."""
+        with self.lock:
+            entry = self.artifacts.get(key)
+            if entry:
+                path = Path(entry['path']).resolve()
+                if path.is_relative_to((self.output/'exports').resolve()):
+                    path.unlink(missing_ok=True)
+                    if path.parent.is_dir() and not any(path.parent.iterdir()):
+                        path.parent.rmdir()
+                self.artifacts.pop(key, None)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -334,8 +400,9 @@ class Handler(BaseHTTPRequestHandler):
                         break
                     self.wfile.write(chunk)
                     remaining -= len(chunk)
+            return remaining == 0 and not partial
         except (ConnectionError, OSError):
-            pass
+            return False
 
     def do_GET(self):
         url = urlparse(self.path)
@@ -366,7 +433,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self.file(path)
                 if url.path == '/api/download':
                     entry = workspace.artifacts[query['id'][0]]
-                    return self.file(Path(entry['path']), entry['name'])
+                    # Full browser downloads no longer need their staging copy after transfer.
+                    # Electron also acknowledges completion/cancellation for interrupted transfers.
+                    if self.file(Path(entry['path']), entry['name']):
+                        workspace.release_artifact(query['id'][0])
+                    return
                 return self.respond(404, {'error': 'Not found'})
             path = (WEB / (unquote(url.path).lstrip('/') or 'index.html')).resolve()
             if not path.is_relative_to(WEB.resolve()) or not path.is_file():

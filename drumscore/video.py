@@ -67,6 +67,66 @@ def audio_codec(path):
     return match.group(1).lower() if match else None
 
 
+YOUTUBE_CLIENTS = ('default', 'tv', 'mweb', 'web_embedded', 'android')
+YOUTUBE_RETRY_CLIENTS = ('visionos', 'android_vr', 'tv', 'web_safari', 'mweb', 'android')
+
+
+def _selected_media(info):
+    streams = (info or {}).get('requested_formats') or [info or {}]
+    height = max((stream.get('height') or 0 for stream in streams), default=0)
+    audio = any(stream.get('acodec') not in (None, 'none') for stream in streams)
+    return height, audio
+
+
+def _youtube_download(url, options, progress, cancel):
+    """Refresh rejected media URLs, keeping notation resolution and audio intact."""
+    import yt_dlp
+
+    def run(opts, download=True):
+        check_cancel(cancel)
+        with yt_dlp.YoutubeDL(opts) as downloader:
+            info = downloader.extract_info(url, download=download)
+            check_cancel(cancel)
+            if not download:
+                return info
+            if not info:
+                raise RuntimeError('YouTube returned no video information.')
+            path = info.get('filepath')
+            if not path:
+                path = next((entry.get('filepath') for entry in info.get('requested_downloads', [])
+                             if entry.get('filepath') and Path(entry['filepath']).is_file()), None)
+            return info, Path(path or downloader.prepare_filename(info))
+
+    try:
+        return run(options)
+    except yt_dlp.utils.DownloadError as first_error:
+        if not re.search(r'(?:HTTP Error|HTTP error|HTTP status)\s*403|403:\s*Forbidden', str(first_error)):
+            raise
+        # Re-extract metadata instead of repeatedly requesting the rejected signed URL.
+        retry = dict(options, cachedir=False, continuedl=False, overwrites=True)
+        probe = dict(retry, skip_download=True, simulate=True, progress_hooks=[], postprocessors=[])
+        try:
+            desired = _selected_media(run(probe, download=False))
+        except yt_dlp.utils.DownloadError:
+            desired = (0, False)
+        for attempt, client in enumerate((None, *YOUTUBE_RETRY_CLIENTS), 1):
+            check_cancel(cancel)
+            candidate = dict(retry)
+            if client:
+                candidate['extractor_args'] = {'youtube': {'player_client': [client]}}
+            progress(f'Retrying YouTube download ({attempt})…', None)
+            try:
+                if client:
+                    metadata_options = dict(probe, extractor_args=candidate['extractor_args'])
+                    height, audio = _selected_media(run(metadata_options, download=False))
+                    if height < desired[0] or (desired[1] and not audio):
+                        continue
+                return run(candidate)
+            except yt_dlp.utils.DownloadError:
+                continue
+        raise first_error
+
+
 def download(source, cache, progress=lambda *args: None, cancel=None):
     local = Path(source).expanduser()
     if local.is_file():
@@ -97,6 +157,9 @@ def download(source, cache, progress=lambda *args: None, cancel=None):
         # Keep audio-enabled downloads separate from older, silent cached videos.
         "outtmpl": str(cache / "%(id)s-av.%(ext)s"),
         "merge_output_format": "mp4",
+        "extractor_args": {'youtube': {'player_client': list(YOUTUBE_CLIENTS)}},
+        "format_sort": ['proto'],
+        "skip_unavailable_fragments": False,
         "noplaylist": True, "quiet": True, "logger": Logger(),
         "progress_hooks": [hook], "socket_timeout": 20,
         "retries": 2, "fragment_retries": 2, "windowsfilenames": True,
@@ -110,9 +173,7 @@ def download(source, cache, progress=lambda *args: None, cancel=None):
         options["js_runtimes"] = runtimes
     check_cancel(cancel)
     progress("Connecting to YouTube…", 0)
-    with yt_dlp.YoutubeDL(options) as ydl:
-        info = ydl.extract_info(url, download=True)
-        path = Path(info.get('filepath') or ydl.prepare_filename(info))
+    info, path = _youtube_download(url, options, progress, cancel)
     check_cancel(cancel)
     if not path.is_file():
         raise RuntimeError("The video download did not produce a readable file.")

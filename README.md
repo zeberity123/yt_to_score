@@ -4,8 +4,8 @@ A Windows Electron app that turns the **sheet music already visible in a YouTube
 
 ## Start
 
-For Windows x64, download `Video-Sheet-to-PDF-0.3.0-win-x64.exe` from the
-[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.3.0)
+For Windows x64, download `Video-Sheet-to-PDF-0.3.1-win-x64.exe` from the
+[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.3.1)
 and double-click it. This portable executable includes Python, FFmpeg, and Node.js;
 no separate installation is needed. The first launch extracts the bundled app.
 Working projects and cached videos are stored under
@@ -22,7 +22,7 @@ If dependencies are already installed in this workspace, you can go straight to 
 2. Click **Load video**. The green rectangle marks the detected score area.
 3. Check the preview. Drag a rectangle to adjust the crop if needed. The time slider updates the displayed frame immediately. Include tempo markings, section letters, and symbols above/below the staff.
 4. In **Automatic** mode, click **Extract score lines** in the right sidebar of **Capture**. The video and timeline occupy the left side. Expand **Extraction settings** for sampling, change threshold, and start/end options. The controls column keeps its width when switching modes.
-5. In **Review & export**, select lines to inspect them. Include/exclude lines, move a selected line up/down, or click **Edit crop** to crop or expand it.
+5. In **Review & export**, select lines to inspect them. **Exclude line** removes a line from the list and PDF; **Undo** restores it. Move a selected line up/down, or click **Edit crop** to crop or expand it.
 6. Set the PDF title, paper size, line gap, and left/right margins, then click **Export PDF**.
 
 The default line gap is 0 mm, with 3 mm left and right margins. **For print** sets the gap to 0 mm and both side margins to 12 mm (1.2 cm). Images retain their aspect ratio and lines never split across PDF pages. **Export PDF** opens a desktop save dialog; the browser version downloads the PDF. **Save project** creates a portable `.drumscore` file using the **PDF & project title**, including original source images and edits.
@@ -41,9 +41,9 @@ Use this when you want to choose every line yourself, including scores at the to
 2. Drag a rectangle around **one complete score line**, wherever it appears on screen.
 3. Press **Play**. Choose **0.5x**, **1x**, **1.5x**, **2x**, **2.5x**, or **3x** from the speed menu. **Pause** stops at the displayed frame. Playback includes sound when the source has an audio track; use **Mute** or the volume slider to control it. These playback controls are available in both modes.
 4. Click **Add line** in the right sidebar each time you want to capture the line currently shown. Playback continues, the counter increases, and the capture is saved immediately.
-5. Open **Review & export** when finished. Include/exclude or reorder captures, then export the PDF as usual.
+5. Open **Review & export** when finished. Remove unwanted captures or reorder them, then export the PDF as usual. **Undo** restores the last removed line, including its crop edits.
 
-Every click appends one original-resolution image of the selected rectangle in click order. Manual mode does not detect staffs, filter similar lines, change colors, or remove repeated lines. Automatic extraction is not required first. Drag the seek slider to jump to another time; the crop stays in place. Adjusting the crop pauses playback. Opening the review tab pauses playback by default. Enable **Audio in Review & export** to keep listening across tabs, or enable **Audio in review** from the review tab to start listening there. Review has its own Play/Pause and speed controls, sharing the capture player's position, speed, and volume. The option starts off each time the app opens and requires a loaded video with audio.
+Every click appends one original-resolution image of the selected rectangle in click order. Manual mode does not detect staffs, filter similar lines, change colors, or remove repeated lines. Automatic extraction is not required first. Drag the seek slider to jump to another time; the crop stays in place. Adjusting the crop pauses playback. **Audio in Review & export** defaults on for a new video and Manual mode, so playback continues across tabs. Automatic extraction pauses playback and turns review audio off. You can enable it again in review or press **Space** to start playback. Review shares the capture player's position, speed, and volume.
 
 Automatic results and manual captures are kept separately while the current video is loaded. Switching modes restores that mode's list. Loading another video starts a fresh session; existing captures remain saved under `output/manual_*/project.json` and can be reopened for review/export.
 
@@ -59,6 +59,8 @@ Each stable view is sampled over time. The extractor uses a median of sampled im
 ## Review and recovery
 
 Use **Down/Right** to select the next captured line and **Up/Left** for the previous line. Selection stops at the first or last line, and the selected thumbnail stays visible. Arrow keys retain their normal behavior in text fields, number inputs, menus, and the crop editor.
+
+**Space** plays/pauses in either tab, including when a button or thumbnail has focus. Text fields still accept spaces normally. **Exclude line** removes the selected line immediately; **Undo** restores removals in reverse order for the current project's session. Removed lines are omitted from saved projects. Exclusions in older projects open hidden and can be restored with Undo.
 
 **Edit crop** opens the retained original frame for a selected line. Drag a corner outward to recover more notation, inward to crop, or drag inside to move the selection. You can also enter exact percentage edges. **Apply crop** saves a new image; **Cancel** discards the pending crop. **Restore original** restores the first captured line, including the automatic extractor's original cleanup. Automatic edits use the retained cleaned source frame; the initial automatic line uses the median of sampled frames.
 
@@ -82,6 +84,10 @@ YouTube downloads are cached in `output/cache/`. If YouTube rejects a download, 
 ```
 
 New YouTube downloads request both video and audio. To get sound for a previously downloaded video-only source, load its original YouTube URL again; the app uses a separate cache for downloads with audio. Local files without an audio track remain silent.
+
+If YouTube rejects a media URL with HTTP 403, the downloader requests fresh URLs and tries alternate clients while preserving the available resolution and audio. This recovery runs within the current app session. YouTube restrictions can still prevent some downloads.
+
+Export staging copies are removed after a successful download, or when a desktop download is cancelled. Desktop shutdown removes that session's remaining export staging files. Saved `.drumscore` files, PDFs, working projects, and source images are retained.
 
 For current YouTube challenges, a supported JavaScript runtime may be needed. The app automatically enables installed Node.js or Deno. See the upstream [yt-dlp JavaScript runtime guide](https://github.com/yt-dlp/yt-dlp/wiki/EJS). Private, restricted, or unavailable videos may require supplying a local video file instead.
 

@@ -46,7 +46,7 @@ async function refresh() {
   state = next;
   if (!initialized) { Object.keys(next.artifacts).forEach(key => downloaded.add(key)); initialized = true; }
   if (previous?.busy && !next.busy) {
-    if (job === 'extract' && !next.error) { selected = 0; switchTab('review'); }
+    if (job === 'extract' && !next.error) { selected = 0; setReviewAudio(false); switchTab('review'); }
     job = null;
   }
   for (const [key, artifact] of Object.entries(next.artifacts)) {
@@ -65,6 +65,17 @@ function switchTab(next) {
   }
   requestAnimationFrame(fitVideo);
 }
+function setReviewAudio(enabled) {
+  $('keep-review-audio').checked = $('review-audio').checked = enabled;
+  updateControls();
+}
+async function togglePlayback() {
+  if (!state?.video || video.readyState < 2 || video.seeking) return;
+  if (video.paused) {
+    if (tab === 'review') setReviewAudio(true);
+    await video.play();
+  } else video.pause();
+}
 function imageUrl(index, kind = 'line') { return api.url('image', {index, kind, v:state.revision}); }
 function render() {
   if (!state) return;
@@ -79,7 +90,7 @@ function render() {
   const mediaKey = state.video ? state.videoId : '';
   if (mediaKey !== currentMedia) {
     currentMedia = mediaKey;
-    if (state.video) { video.src = api.url('video', {v:state.revision}); video.load(); }
+    if (state.video) { setReviewAudio(true); video.src = api.url('video', {v:state.revision}); video.load(); }
     else { video.pause(); video.removeAttribute('src'); video.load(); }
   }
   if (!crop.drag) crop.set(cropArray(state.region));
@@ -131,7 +142,7 @@ function renderSelection() {
   if (line) {
     const key = `${state.projectId}:${state.mode}:${selected}:${line.path}`;
     if ($('line-image').dataset.key !== key) { $('line-image').src = imageUrl(selected); $('line-image').dataset.key = key; }
-    $('include-line').textContent = line.included ? 'Exclude line' : 'Include line';
+    $('include-line').textContent = 'Exclude line';
     $('line-meta').textContent = `${clock(line.time,true)} · ${line.included ? 'Included in PDF' : 'Excluded from PDF'}`;
   }
 }
@@ -148,6 +159,7 @@ function updateControls() {
     'review-play':ready && state.hasAudio !== false && $('review-audio').checked,
     'review-speed':loaded && state.hasAudio !== false && $('review-audio').checked,
     'edit-line':!!line, 'include-line':!!line, 'move-up':!!line && selected>0,
+    'undo-line':!!state?.canUndo,
     'move-down':!!line && selected<state.lines.length-1,
     'save-project':!!state?.lines.length, 'export-pdf':!!state?.lines.some(l => l.included),
     'for-print':true,
@@ -175,7 +187,7 @@ async function upload(file, kind) {
   } finally { uploading = false; updateControls(); }
 }
 async function loadVideo() {
-  video.pause(); job = 'load'; titleDirty = false; currentMedia = '';
+  video.pause(); job = 'load'; titleDirty = false;
   await command('load', {source:$('source').value, layout:$('layout').value});
 }
 listen('capture-tab','click', () => switchTab('capture'));
@@ -193,17 +205,18 @@ listen('load-video','click', loadVideo);
 for (const mode of ['automatic','manual']) listen(mode,'click', async () => {
   video.pause(); selected = 0;
   await command('mode', {mode});
+  if (mode === 'manual') setReviewAudio(true);
   if (mode === 'manual' && !state.lines.length && state.video) video.currentTime = 0;
 });
 listen('detect','click', () => { video.pause(); return command('detect', {time:video.currentTime, layout:$('layout').value}); });
 listen('extract','click', async () => {
-  video.pause(); job = 'extract';
+  video.pause(); setReviewAudio(false); job = 'extract';
   await command('extract', {interval:$('interval').value, threshold:$('threshold').value, start:$('start').value,
     end:$('end').value, overlap:true});
 });
 listen('cancel','click', () => command('cancel'));
-listen('play','click', () => video.paused ? video.play() : video.pause());
-listen('review-play','click', () => video.paused ? video.play() : video.pause());
+listen('play','click', togglePlayback);
+listen('review-play','click', togglePlayback);
 for (const id of ['speed','review-speed']) listen(id,'change', () => {
   const value = $(id).value;
   $('speed').value = $('review-speed').value = value;
@@ -211,8 +224,7 @@ for (const id of ['speed','review-speed']) listen(id,'change', () => {
 });
 for (const id of ['keep-review-audio','review-audio']) listen(id,'change', async () => {
   const enabled = $(id).checked;
-  $('keep-review-audio').checked = $('review-audio').checked = enabled;
-  updateControls();
+  setReviewAudio(enabled);
   if (tab === 'review') {
     if (enabled) await video.play();
     else video.pause();
@@ -244,7 +256,11 @@ listen('for-print','click', () => {
   $('gap').value = '0';
   $('left-margin').value = $('right-margin').value = '12';
 });
-listen('include-line','click', () => command('include', {index:selected, included:!state.lines[selected].included}));
+listen('include-line','click', () => command('remove', {index:selected}));
+listen('undo-line','click', async () => {
+  selected = state.undoIndex;
+  await command('undo');
+});
 for (const [id,direction] of [['move-up',-1],['move-down',1]]) listen(id,'click', async () => {
   const index = selected; selected += direction;
   try { await command('move', {index,direction}); } catch (error) { selected = index; throw error; }
@@ -276,7 +292,14 @@ listen('apply-edit','click', async () => {
 });
 listen('reset-line','click', async () => { await command('edit', {index:editorIndex,reset:true}); $('editor').close(); });
 document.addEventListener('keydown', e => {
-  if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey ||
+  if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+  // Keep spaces available for titles/URLs, but never activate a focused action button.
+  if (e.code === 'Space' && !e.target.closest('textarea,[contenteditable]:not([contenteditable="false"]),input:not([type=range],[type=checkbox],[type=number])')) {
+    e.preventDefault();
+    if (!e.repeat) togglePlayback().catch(fail);
+    return;
+  }
+  if (
       e.target.closest('input,select,textarea,[contenteditable]:not([contenteditable="false"])') ||
       $('editor').open || state?.busy || requesting || uploading) return;
   const direction = {ArrowUp:-1, ArrowLeft:-1, ArrowDown:1, ArrowRight:1}[e.key];
@@ -290,8 +313,6 @@ document.addEventListener('keydown', e => {
     button.scrollIntoView({block:'nearest',inline:'nearest'});
     return;
   }
-  if (e.target.closest('button')) return;
-  if (e.code === 'Space' && tab === 'capture' && !$('play').disabled) { e.preventDefault(); $('play').click(); }
 });
 async function poll() {
   if (!polling && !requesting && !$('editor').open) {
