@@ -14,7 +14,7 @@ def main():
     parser.add_argument("-o", "--output", type=Path, default=Path("output/drum-score.pdf"))
     parser.add_argument("--title")
     parser.add_argument("--mode", choices=["auto", "bottom", "page"], default="auto")
-    parser.add_argument("--notation", choices=['staff', 'guitar'], default='staff', help='Standard five-line staff or six-string guitar TAB')
+    parser.add_argument("--notation", choices=['staff', 'guitar', 'bass', 'piano'], default='staff', help='Drums, guitar TAB, bass notation/TAB, or paired piano staves')
     parser.add_argument("--crop", type=float, nargs=4, metavar=("LEFT", "TOP", "RIGHT", "BOTTOM"), help="Crop coordinates from 0 to 1")
     parser.add_argument("--interval", type=float, default=.5, help="Seconds between samples (default .5)")
     parser.add_argument("--threshold", type=float, default=.035, help="Lower values detect smaller notation changes")

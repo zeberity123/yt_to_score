@@ -45,6 +45,7 @@ async function refresh() {
   const next = await api.state();
   const previous = state;
   state = next;
+  if (next.notation && next.notation !== previous?.notation) $('notation').value = next.notation;
   if (!initialized) { Object.keys(next.artifacts).forEach(key => downloaded.add(key)); initialized = true; }
   if (previous?.busy && !next.busy) {
     if (job === 'extract' && !next.error) { selected = 0; setReviewAudio(false); switchTab('review'); }

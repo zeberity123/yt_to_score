@@ -40,6 +40,21 @@ def test_api_auth_and_static_path_boundaries(server):
     assert error.value.code == 404
 
 
+def test_instrument_restored_from_project_and_invalid_mode_rejected(server):
+    workspace=server.workspace
+    project=new_manual_project(workspace.output,'Piano','',Region())
+    project.notation='piano'
+    append_line(project,np.full((80,160,3),255,np.uint8),Region(),0)
+    workspace.command('open',{'path':str(project.directory/'project.json')})
+    assert workspace.state()['notation']=='piano'
+    workspace.command('mode',{'mode':'manual'})
+    workspace.notation='bass'
+    workspace.command('mode',{'mode':'automatic'})
+    assert workspace.state()['notation']=='piano'
+    with pytest.raises(ValueError,match='Unknown notation'):
+        workspace.command('load',{'source':'unused','notation':'invalid'})
+
+
 def test_edit_and_range_requests_and_archive_download(server):
     workspace = server.workspace
     workspace.projects['manual'] = new_manual_project(workspace.output, 'Named score', '', Region())

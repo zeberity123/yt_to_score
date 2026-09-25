@@ -9,6 +9,7 @@ from PIL import Image
 
 from .video import check_cancel, frames, metadata, preview
 from .vision import Region, auto_region, clean_score, clean_tab, difference, signature, tab_signature, split_systems, staffs, system_signature
+from .notation import NOTATIONS, clean_notation, system_groups, split_notation, system_fingerprint, notation_signature
 
 
 @dataclass
@@ -57,10 +58,12 @@ class Extraction:
 def extract(path, destination, title="Sheet music", source="", region=None, mode="auto",
             interval=.5, threshold=.035, start=0, end=None, progress=lambda *args: None, cancel=None,
             remove_overlap=True, notation='staff'):
-    if notation not in ('staff', 'guitar'):
+    if notation not in NOTATIONS:
         raise ValueError('Unknown notation type.')
-    rules = 6 if notation == 'guitar' else 5
-    clean = clean_tab if notation == 'guitar' else clean_score
+    rules = {'guitar':6,'bass':4}.get(notation,5)
+    paired = notation in ('bass','piano')
+    clean = (lambda frame:clean_notation(frame,notation)) if paired else clean_tab if notation == 'guitar' else clean_score
+    find_groups = (lambda gray:system_groups(gray,notation)) if paired else lambda gray:staffs(gray,rules)
     _, _, duration = metadata(path)
     end = duration if end is None else min(end, duration)
     if not 0 <= start < end:
@@ -72,7 +75,7 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
         for t in (start, start+(end-start)*.1, start+(end-start)*.3):
             frame = preview(path, t)
             crop = auto_region(frame, mode, notation)
-            candidates.append((len(staffs(clean(crop.crop(frame)), rules)), crop))
+            candidates.append((len(find_groups(clean(crop.crop(frame)))), crop))
         region = max(candidates, key=lambda item: item[0])[1]
     directory = Path(destination) / ("score_"+uuid.uuid4().hex[:10])
     directory.mkdir(parents=True)
@@ -99,11 +102,11 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
             rejected += 1
             current = None
             return
-        segments = split_systems(image, with_bounds=True, rules=rules)
+        segments = split_notation(image,notation,with_bounds=True) if paired else split_systems(image, with_bounds=True, rules=rules)
         strips = [strip for strip, bounds in segments]
         if strips:
             view_number += 1
-            systems = [system_signature(strip, rules) for strip in strips]
+            systems = [system_fingerprint(strip,notation) if paired else system_signature(strip, rules) for strip in strips]
             overlap = 0
             if remove_overlap and len(strips) > 1 and len(previous_systems) > 1:
                 for size in range(min(len(systems), len(previous_systems)), 0, -1):
@@ -141,7 +144,7 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
             fh, fw = current["frame"].shape[:2]
             rx, ry = int(region.left*fw), int(region.top*fh)
             context = clean_score(current['frame'])
-            if notation == 'guitar':
+            if notation != 'staff':
                 context[ry:ry+image.shape[0], rx:rx+image.shape[1]] = image
             Image.fromarray(context).save(directory / context_name)
             for strip, bounds in segments[overlap:]:
@@ -159,7 +162,7 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
         for t, frame in iterator:
             check_cancel(cancel)
             gray = clean(region.crop(frame))
-            sig = tab_signature(gray) if notation == 'guitar' else signature(gray)
+            sig = notation_signature(gray,notation) if paired else tab_signature(gray) if notation == 'guitar' else signature(gray)
             if current is not None and difference(current["signature"], sig, fine=current['fine']) <= threshold:
                 current["count"] += 1
                 # A small reservoir spreads the median across the entire stable view.
@@ -171,7 +174,7 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
                         current["samples"][index] = gray.copy()
             else:
                 flush()
-                if staffs(gray, rules):
+                if find_groups(gray):
                     current = {"signature": sig, "samples": [gray.copy()], "count": 1, "time": t,
                                "frame": frame.copy(),
                                # Translucent white-on-video TAB needs the same
@@ -189,7 +192,7 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
         project.warnings.append(f"Removed {overlap_count} matching lines at consecutive page boundaries. Disable page-overlap removal if these are intentional repeats.")
     if tab_joins:
         project.warnings.append(f"Joined {tab_joins} overlapping TAB views at matching barlines. Original panels remain available in Edit crop.")
-    if notation == 'guitar':
+    if notation in ('guitar','bass'):
         project.warnings.append('Check partial measures at TAB panel edges. Uncertain overlaps are kept; use Edit crop to adjust them. Continuously moving TAB may require manual capture.')
     project.warnings.append("Review the lines before printing. Continuous scrolling, animated notation, and identical consecutive score views may need manual capture or editing.")
     project.save()

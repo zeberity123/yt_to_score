@@ -1,7 +1,10 @@
 {
   "Language": ["언어", "言語"],
   "Notation": ["악보 종류", "楽譜の種類"],
-  "Standard / drums": ["일반 악보 / 드럼", "五線譜・ドラム"],
+  "Drums": ["드럼", "ドラム"],
+  "Bass": ["베이스", "ベース"],
+  "Piano": ["피아노", "ピアノ"],
+  "Unknown notation type.": ["지원하지 않는 악보 종류입니다.", "対応していない楽譜の種類です。"],
   "Guitar TAB (6 strings)": ["기타 TAB (6현)", "ギターTAB（6弦）"],
   "Joined {count} overlapping TAB views at matching barlines. Original panels remain available in Edit crop.": ["겹치는 TAB 화면 {count}곳을 일치하는 마디선에서 연결했습니다. 영역 편집에서 원래 화면을 확인할 수 있습니다.", "重複するTAB画面を{count}か所、一致する小節線でつなぎました。元の画面は「範囲を編集」で確認できます。"],
   "Check partial measures at TAB panel edges. Uncertain overlaps are kept; use Edit crop to adjust them. Continuously moving TAB may require manual capture.": ["TAB 화면 양 끝의 잘린 마디를 확인하세요. 겹침이 확실하지 않은 부분은 유지되므로 영역 편집으로 조정하세요. 계속 움직이는 TAB은 수동 캡처가 필요할 수 있습니다.", "TAB画面の両端で切れた小節を確認してください。重複が不確かな部分は残すため、「範囲を編集」で調整してください。常にスクロールするTABは手動キャプチャが必要な場合があります。"],

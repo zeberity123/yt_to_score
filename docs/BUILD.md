@@ -13,7 +13,7 @@ with PyInstaller, and packages an Electron portable executable with electron-bui
 It downloads the license for the exact Node.js runtime being bundled if the local
 installation does not contain it. Packaging tools and Electron may require downloads.
 
-The output is `dist/Video-Sheet-to-PDF-0.4.0-win-x64.exe`. The unpacked application
+The output is `dist/Video-Sheet-to-PDF-0.5.0-win-x64.exe`. The unpacked application
 is also available at `dist/win-unpacked/Video Sheet to PDF.exe` for verification.
 The portable application extracts at launch and stores working data under Electron's
 user-data folder (`%APPDATA%/Video Sheet to PDF/output`), outside the temporary app.
@@ -25,6 +25,7 @@ $env:SCORE_TEST_EXECUTABLE = (Resolve-Path 'dist/win-unpacked/Video Sheet to PDF
 npm run test:desktop
 npm run test:playback
 npm run test:languages
+npm run test:instruments
 Remove-Item Env:SCORE_TEST_EXECUTABLE
 npm run test:portable
 ```
@@ -42,6 +43,13 @@ stored as `diagnostics/guitar/t_dHA1lgeAU-av.mp4` and
 distributed. Automated Python tests cover synthetic six-string TAB, white ink
 on moving dark backgrounds, changing fret numbers, playback boxes, and barline
 overlap matching without external media.
+
+`npm run test:instruments` checks the eight supplied bass and piano examples stored
+under `diagnostics/instruments/<YouTube-ID>-av.mp4`. It verifies automatic capture,
+crop editing, translations, PDF export, saved notation modes, and narrow layouts.
+These videos are local test inputs and are not distributed. Python tests cover
+four-string detection, combined staff/TAB systems, paired piano staves, preserved
+left-hand changes, playback cursor cleanup, page overlap, and later repeats.
 
 No signing certificate is configured. Release binaries are unsigned. Publish the
 portable EXE as a GitHub Release asset rather than adding it to Git history, and

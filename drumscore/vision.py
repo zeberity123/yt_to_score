@@ -53,28 +53,31 @@ def _staffs_at(gray, threshold, rules=5):
     if w < 50 or h < 15:
         return []
     ink = (gray < threshold).astype(np.uint8)
-    if rules == 6:
+    if rules in (4, 6):
         # Fret digits interrupt the string rules, unlike ordinary noteheads.
         ink = cv2.morphologyEx(ink, cv2.MORPH_CLOSE, np.ones((1, max(5, w//160)), np.uint8))
     horizontal = cv2.morphologyEx(ink, cv2.MORPH_OPEN,
-                                 np.ones((1, max(20, w//50 if rules == 6 else w//7)), np.uint8))
+                                 np.ones((1, max(20, w//50 if rules in (4, 6) else w//7)), np.uint8))
     centers = [int(np.round(r.mean())) for r in runs(np.flatnonzero(horizontal.sum(axis=1) > w*.30))]
     found = []
     i = 0
     while i+rules-1 < len(centers):
-        if rules == 6:
+        if rules in (4, 6):
             # Additional beam/bend rows must not break an otherwise regular grid.
             match = None
-            for last in centers[i+5:]:
-                spacing = (last-centers[i])/5
-                if not 3 <= spacing <= min(35, h/8):
+            for last in centers[i+rules-1:]:
+                spacing = (last-centers[i])/(rules-1)
+                if not 3 <= spacing <= min(35, h/(rules+2)):
                     continue
-                targets = [min(centers, key=lambda y: abs(y-(centers[i]+n*spacing))) for n in range(6)]
+                targets = [min(centers, key=lambda y: abs(y-(centers[i]+n*spacing))) for n in range(rules)]
                 if all(abs(y-(centers[i]+n*spacing)) <= max(1.5, spacing*.12) for n,y in enumerate(targets)):
+                    if rules == 4 and any(abs(y-end) <= max(1.5, spacing*.12)
+                            for y in centers for end in (targets[0]-spacing, targets[-1]+spacing)):
+                        continue  # Never mistake four of a five-line staff for TAB.
                     match = targets
                     break
             if match:
-                found.append((match[0], match[-1], (match[-1]-match[0])/5))
+                found.append((match[0], match[-1], (match[-1]-match[0])/(rules-1)))
                 i = centers.index(match[-1])+1
             else:
                 i += 1
@@ -98,7 +101,7 @@ def staffs(gray, rules=5):
     return sorted(found)
 
 
-def clean_tab(frame):
+def clean_tab(frame, rules=6):
     """Normalize both dark TAB on paper and white TAB over dark footage."""
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if frame.ndim == 3 else frame
     if np.mean(gray > 200) > .55:
@@ -112,13 +115,16 @@ def clean_tab(frame):
     # against adjacent rows, then retain them as gray rules in the printable image.
     thin = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, np.ones((7, 1), np.uint8))
     rules_image = np.where(thin > 12, 0, 255).astype(np.uint8)
-    for first, last, spacing in staffs(rules_image, 6):
-        for y in np.linspace(first, last, 6).round().astype(int):
+    for first, last, spacing in staffs(rules_image, rules):
+        for y in np.linspace(first, last, rules).round().astype(int):
             result[y] = np.minimum(result[y], 185)
     return result
 
 
 def auto_region(frame, mode="auto", notation="staff"):
+    if notation in ('bass', 'piano'):
+        from .notation import detect_region
+        return detect_region(frame, notation, mode)
     h, w = frame.shape[:2]
     gray = clean_score(frame, flatten=False)
     rules = 6 if notation == 'guitar' else 5
@@ -173,10 +179,10 @@ def signature(gray):
     return ink
 
 
-def tab_signature(gray):
+def tab_signature(gray, rules=6):
     """Compare fret numbers without the moving playback box or playhead."""
     ink = (gray < 150).astype(np.uint8)
-    groups = staffs(gray, 6)
+    groups = staffs(gray, rules)
     spacing = groups[0][2] if groups else max(5, gray.shape[0]/14)
     vertical = cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((max(12, int(spacing*2.5)), 1), np.uint8))
     horizontal = cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((1, max(30, gray.shape[1]//20)), np.uint8))
@@ -213,9 +219,9 @@ def difference(a, b, *, fine=False):
     return min(1.0, score*2) if fine else score
 
 
-def split_systems(gray, padding=2, *, with_bounds=False, rules=5):
+def split_systems(gray, padding=2, *, with_bounds=False, rules=5, groups=None):
     """Assign connected notation to each staff without slicing through symbols."""
-    groups = staffs(gray, rules)
+    groups = staffs(gray, rules) if groups is None else groups
     if not groups:
         return []
     h, w = gray.shape
@@ -275,4 +281,4 @@ def system_signature(image, rules=5):
     if length <= 0:
         return None
     target[target_top:target_top+length] = resized[source_top:source_top+length]
-    return tab_signature(target) if rules == 6 else signature(target)
+    return tab_signature(target, rules) if rules in (4, 6) else signature(target)

@@ -24,6 +24,7 @@ from .manual import append_line, new_manual_project
 from .pdf import export_pdf
 from .video import Cancelled, audio_codec, check_cancel, download, ffmpeg_path, metadata, preview
 from .vision import Region, auto_region
+from .notation import NOTATIONS, clean_notation, split_notation
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB = ROOT / 'web'
@@ -44,6 +45,7 @@ class Workspace:
         self.progress = 0
         self.revision = 0
         self.mode = 'automatic'
+        self.notation = 'staff'
         self.projects = {'automatic': None, 'manual': None}
         self.video = None
         self.video_id = None
@@ -67,7 +69,7 @@ class Workspace:
                     'progress': self.progress, 'revision': self.revision, 'mode': self.mode,
                     'title': self.title, 'video': bool(self.media), 'videoId': self.video_id,
                     'projectId': project.directory.name if project else None, 'duration': self.duration,
-                    'hasAudio': self.has_audio,
+                    'hasAudio': self.has_audio, 'notation': self.notation,
                     'canUndo': bool(self.removed[self.mode]),
                     'undoIndex': self.removed[self.mode][-1][0] if self.removed[self.mode] else None,
                     'region': asdict(self.region), 'source': Path(self.video).name if self.video else '',
@@ -157,6 +159,11 @@ class Workspace:
             if self.busy:
                 raise ValueError('Wait for the current operation or cancel it first.')
             self.error = None
+            notation = self.notation
+            if action in ('load','detect','extract'):
+                notation = str(data.get('notation', self.notation))
+                if notation not in NOTATIONS:
+                    raise ValueError('Unknown notation type.')
             if action == 'load':
                 source = str(data['source']).strip()
                 mode = self.mode
@@ -165,13 +172,14 @@ class Workspace:
                     _, _, duration = metadata(path)
                     sound_codec = audio_codec(path)
                     media = self.browser_media(path, sound_codec)
-                    region = auto_region(preview(path, 0 if mode == 'manual' else min(20, duration*.1)), data.get('layout', 'auto'), data.get('notation', 'staff'))
+                    region = auto_region(preview(path, 0 if mode == 'manual' else min(20, duration*.1)), data.get('layout', 'auto'), notation)
                     check_cancel(self.cancel)
                     with self.lock:
                         self.video, self.media, self.source = path, media, source
                         self.video_id = uuid.uuid4().hex
                         self.duration, self.title, self.region = duration, title, region
                         self.has_audio = sound_codec is not None
+                        self.notation = notation
                         self.projects = {'automatic': None, 'manual': None}
                         self.removed = {'automatic': [], 'manual': []}
                         self.status = 'Video ready. Drag on the video to select your score.'
@@ -180,6 +188,8 @@ class Workspace:
                 if data['mode'] not in self.projects:
                     raise ValueError('Unknown capture mode.')
                 self.mode = data['mode']
+                if self.project and self.project.notation in NOTATIONS:
+                    self.notation = self.project.notation
             elif action == 'title':
                 self.title = str(data['title'])[:500]
                 if self.project:
@@ -189,7 +199,8 @@ class Workspace:
                 self.region = Region(*data['crop'])
             elif action == 'detect':
                 self.require_video()
-                self.region = auto_region(preview(self.video, float(data['time'])), data.get('layout', 'auto'), data.get('notation', 'staff'))
+                self.region = auto_region(preview(self.video, float(data['time'])), data.get('layout', 'auto'), notation)
+                self.notation = notation
             elif action == 'extract':
                 self.require_video()
                 region = self.region
@@ -198,11 +209,12 @@ class Workspace:
                                       interval=float(data.get('interval', .5)), threshold=float(data.get('threshold', .035)),
                                       start=float(data.get('start', 0)), end=float(data['end']) if data.get('end') not in ('', None) else None,
                                       remove_overlap=bool(data.get('overlap', True)), progress=self.report, cancel=self.cancel,
-                                      notation=data.get('notation', 'staff'))
+                                      notation=notation)
                     with self.lock:
                         self.projects['automatic'] = project
                         self.removed['automatic'] = []
                         self.mode = 'automatic'
+                        self.notation = notation
                         self.status = f'{len(project.lines)} score lines ready to review.'
                 self.start(task)
             elif action in ('capture', 'add-view'):
@@ -214,20 +226,30 @@ class Workspace:
                         raise ValueError('Choose Manual mode to capture a line.')
                     if not self.project:
                         self.projects[self.mode] = new_manual_project(self.output, self.title, self.source, self.region)
+                        self.project.notation = self.notation
                     append_line(self.project, frame, self.region, seconds)
                 else:
                     if not self.project:
                         raise ValueError('Extract a score first, then add missing views.')
-                    from .vision import clean_score, split_systems
+                    from .vision import clean_score, clean_tab, split_systems
                     from .extract import ScoreLine
                     from PIL import Image
-                    segments = split_systems(clean_score(self.region.crop(frame)), with_bounds=True)
+                    notation = self.project.notation
+                    crop_frame = self.region.crop(frame)
+                    if notation in ('bass','piano'):
+                        cleaned = clean_notation(crop_frame,notation)
+                        segments = split_notation(cleaned,notation,with_bounds=True)
+                    else:
+                        cleaned = clean_tab(crop_frame) if notation == 'guitar' else clean_score(crop_frame)
+                        segments = split_systems(cleaned,with_bounds=True,rules=6 if notation=='guitar' else 5)
                     if not segments:
                         raise ValueError('No staff lines found in this crop.')
                     source_name = 'source_' + uuid.uuid4().hex[:12] + '.png'
-                    Image.fromarray(clean_score(frame)).save(self.project.directory/source_name)
                     h, w = frame.shape[:2]
                     rx, ry = int(self.region.left*w), int(self.region.top*h)
+                    context = clean_score(frame)
+                    context[ry:ry+cleaned.shape[0],rx:rx+cleaned.shape[1]] = cleaned
+                    Image.fromarray(context).save(self.project.directory/source_name)
                     at = min(len(self.project.lines), max(0, int(data.get('after', len(self.project.lines)-1))+1))
                     for offset, (strip, box) in enumerate(segments):
                         name = 'extra_' + uuid.uuid4().hex[:12] + '.png'
@@ -252,6 +274,7 @@ class Workspace:
                         self.removed['automatic'].append((len(visible), line))
                 project.lines = visible
                 self.mode, self.title = 'automatic', project.title
+                self.notation = project.notation if project.notation in NOTATIONS else 'staff'
                 self.video = self.media = None
                 self.video_id = None
                 self.duration = 0
