@@ -10,6 +10,7 @@ from PIL import Image
 from .video import check_cancel, frames, metadata, preview
 from .vision import Region, auto_region, clean_score, clean_tab, difference, signature, tab_signature, split_systems, staffs, system_signature
 from .notation import NOTATIONS, clean_notation, system_groups, split_notation, system_fingerprint, notation_signature
+from .matching import aligned_difference, measure_anchors
 
 
 @dataclass
@@ -62,7 +63,7 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
         raise ValueError('Unknown notation type.')
     rules = {'guitar':6,'bass':4}.get(notation,5)
     paired = notation in ('bass','piano')
-    clean = (lambda frame:clean_notation(frame,notation)) if paired else clean_tab if notation == 'guitar' else clean_score
+    clean = clean_tab if notation == 'guitar' else lambda frame:clean_notation(frame,notation)
     find_groups = (lambda gray:system_groups(gray,notation)) if paired else lambda gray:staffs(gray,rules)
     _, _, duration = metadata(path)
     end = duration if end is None else min(end, duration)
@@ -88,10 +89,13 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
     overlap_count = 0
     tab_panel = None
     tab_joins = 0
-    compare_systems = difference
-    if notation == 'guitar':
-        from .guitar import aligned_difference
-        compare_systems = aligned_difference
+    def compare_systems(a,b):
+        first, anchors_a = a
+        second, anchors_b = b
+        if first is None or second is None:
+            return 1.0
+        return aligned_difference(first,second,fine=current['fine'],stable=current['stable'],
+                                  anchors=None if notation == 'guitar' else (anchors_a,anchors_b))
 
     def flush():
         nonlocal current, view_number, rejected, previous_systems, overlap_count, tab_panel, tab_joins
@@ -110,31 +114,32 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
         strips = [strip for strip, bounds in segments]
         if strips:
             view_number += 1
-            systems = [system_fingerprint(strip,notation) if paired else system_signature(strip, rules) for strip in strips]
+            systems = [(system_fingerprint(strip,notation) if paired else system_signature(strip,rules),
+                        measure_anchors(strip,rules=rules,paired=paired)) for strip in strips]
             overlap = 0
             if remove_overlap and len(strips) > 1 and len(previous_systems) > 1:
                 for size in range(min(len(systems), len(previous_systems)), 0, -1):
                     pairs = zip(previous_systems[-size:], systems[:size])
-                    if all(a is not None and b is not None and compare_systems(a, b, fine=current['fine'], stable=current['stable']) < .035 for a, b in pairs):
+                    if all(compare_systems(a,b) < .035 for a,b in pairs):
                         overlap = size
                         break
             elif remove_overlap and len(strips) == 1 and previous_systems:
                 a, b = previous_systems[-1], systems[0]
-                if a is not None and b is not None and compare_systems(a, b, fine=current['fine'], stable=current['stable']) < .035:
+                if compare_systems(a,b) < .035:
                     overlap = 1
             overlap_count += overlap
             # Keep the accepted anchor when discarding a nudged single panel.
             # Otherwise repeated tiny shifts could hide a genuinely scrolling view.
-            if not (notation == 'guitar' and overlap == 1 and len(systems) == 1):
+            if not (overlap == 1 and len(systems) == 1):
                 previous_systems = systems
             if len(segments) != 1:
                 tab_panel = None
-            if notation == 'guitar' and remove_overlap and not overlap and len(segments) == 1:
+            if notation in ('guitar','bass') and remove_overlap and not overlap and len(segments) == 1:
                 from .guitar import overlap_cut
                 panel, bounds = segments[0]
                 if tab_panel is not None and project.lines:
                     previous_panel, previous_left = tab_panel
-                    cut = overlap_cut(previous_panel, panel)
+                    cut = overlap_cut(previous_panel,panel,rules)
                     if cut and cut[0] > previous_left:
                         previous_line = project.lines[-1]
                         Image.fromarray(previous_panel[:, previous_left:cut[0]+1]).save(directory/previous_line.path)
@@ -182,14 +187,15 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
             else:
                 flush()
                 if find_groups(gray):
+                    tab_only = notation == 'guitar' or (notation == 'bass' and not staffs(gray))
                     current = {"signature": sig, "samples": [gray.copy()], "count": 1, "time": t,
                                "frame": frame.copy(),
                                # Translucent white-on-video TAB needs the same
                                # speckle tolerance as moving drum-score panels.
-                               "fine": rules == 6 and np.mean(region.crop(frame) > 200) > .55,
+                               "fine": tab_only and np.mean(region.crop(frame) > 200) > .55,
                                # HD retains enough pixels to reject narrow noise
                                # while still checking individual fret changes.
-                               "stable": rules == 6 and gray.shape[1] >= 1500}
+                               "stable": tab_only and gray.shape[1] >= 1500}
             progress(f"Scanning {t:.1f}s / {end:.1f}s · {len(project.lines)} lines", (t-start)/(end-start))
         flush()
     finally:

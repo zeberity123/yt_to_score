@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const root=path.resolve(__dirname,'..');
 const examples={bass:['zuk6TVvOYMU','21XgHm-Oyhc','Qo01L0TLih4','QsCv8s5nTmo','i98e58e5AGY'],piano:['uAQLt5lyyIM','J73Fhk5cTX0','ucx1BYaEGXE']};
+const expectedCounts={zuk6TVvOYMU:2,'21XgHm-Oyhc':3,Qo01L0TLih4:3,QsCv8s5nTmo:4,i98e58e5AGY:4,uAQLt5lyyIM:3,J73Fhk5cTX0:3,ucx1BYaEGXE:6};
 (async()=>{
   const executablePath=process.env.SCORE_TEST_EXECUTABLE;
   const profile=path.join(root,'diagnostics','instruments-ui-profile');
@@ -37,7 +38,13 @@ const examples={bass:['zuk6TVvOYMU','21XgHm-Oyhc','Qo01L0TLih4','QsCv8s5nTmo','i
         await page.locator('#extract').click();
         await page.waitForFunction(()=>!document.querySelector('#review-screen').hidden,null,{timeout:120000});
         const count=await page.locator('.line-item').count();
-        assert.ok(count>=2 && count<=12,`${name}: ${count} lines`);
+        assert.equal(count,expectedCounts[name],`${name}: unexpected duplicate or missing capture`);
+        if(name==='QsCv8s5nTmo') {
+          const state=await page.evaluate(async()=>await (await fetch('/api/state',{
+            headers:{'X-Session-Token':sessionStorage.getItem('drum-session')}
+          })).json());
+          assert.ok(state.warnings.some(warning=>warning.includes('Joined 2 overlapping TAB')));
+        }
         await page.locator('#edit-line').click();
         await page.waitForFunction(()=>document.querySelector('#editor-image').naturalWidth>0);
         assert.ok(await page.locator('#editor-image').evaluate(node=>node.naturalWidth>=1080));

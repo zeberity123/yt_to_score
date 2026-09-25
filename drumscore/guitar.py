@@ -3,31 +3,11 @@ import cv2
 import numpy as np
 
 from .vision import difference, runs, staffs, tab_signature
+from .matching import aligned_difference
 
 
-def aligned_difference(a, b, *, fine=False, stable=False):
-    """Tolerate small panel nudges, but compare every interior fret after alignment."""
-    direct = difference(a,b,fine=fine,stable=stable)
-    if direct <= .035 or a.shape != b.shape or min(a.shape) < 20:
-        return direct
-    shift, confidence = cv2.phaseCorrelate(a.astype(np.float32),b.astype(np.float32))
-    dx,dy = (round(value) for value in shift)
-    if confidence < .5 or abs(dx) > a.shape[1]*.03 or abs(dy) > 4:
-        return direct
-    ax,bx=max(0,-dx),max(0,dx)
-    ay,by=max(0,-dy),max(0,dy)
-    height,width=a.shape[0]-abs(dy),a.shape[1]-abs(dx)
-    # The outer pixels can contain incomplete digits at the video boundary.
-    edge=max(3,round(a.shape[1]*.01))
-    left=a[ay:ay+height,ax+edge:ax+width-edge]
-    right=b[by:by+height,bx+edge:bx+width-edge]
-    if min(int(left.sum()),int(right.sum())) < 100:
-        return direct
-    return min(direct,difference(left,right,fine=fine,stable=stable))
-
-
-def barlines(image):
-    groups = staffs(image, 6)
+def barlines(image, rules=6):
+    groups = staffs(image, rules)
     if len(groups) != 1:
         return []
     first, last, spacing = groups[0]
@@ -35,20 +15,23 @@ def barlines(image):
     return [int(np.round(run.mean())) for run in runs(np.flatnonzero(band.mean(axis=0) > .94))]
 
 
-def overlap_cut(previous, following):
+def overlap_cut(previous, following, rules=6):
     """Return matching barlines only when the shared notation verifies the match.
 
     Whole original panels remain available through the crop editor. Ambiguous
     matches leave both captures intact rather than guessing which notes to omit.
     """
+    # Staff-plus-TAB systems must never be joined using the TAB half alone.
+    if rules == 4 and (staffs(previous) or staffs(following)):
+        return None
     for left, right in ((.8,.2),(.65,.35),(.4,.6),(.08,.92)):
-        result = _overlap_cut(previous, following, left, right)
+        result = _overlap_cut(previous, following, left, right, rules)
         if result:
             return result
     return None
 
 
-def _overlap_cut(previous, following, left, right):
+def _overlap_cut(previous, following, left, right, rules=6):
     if previous.shape[1] != following.shape[1] or min(previous.shape[1], following.shape[1]) < 150:
         return None
     width = previous.shape[1]
@@ -84,10 +67,11 @@ def _overlap_cut(previous, following, left, right):
     edge=max(20,round(width*.02))
     if a.shape[1] < edge*2+80:
         return None
-    if difference(tab_signature(a[:,edge:-edge]), tab_signature(b[:,edge:-edge])) > .10:
+    error = difference(tab_signature(a[:,edge:-edge],rules), tab_signature(b[:,edge:-edge],rules),fine=rules == 4)
+    if error > (.035 if rules == 4 else .10):
         return None
-    bars_b = barlines(following)
-    for x in reversed(barlines(previous)):
+    bars_b = barlines(following,rules)
+    for x in reversed(barlines(previous,rules)):
         bx = x-dx
         if x < width-5 and bx > 5 and any(abs(other-bx) <= 3 for other in bars_b):
             return x, min(bars_b, key=lambda other:abs(other-bx))

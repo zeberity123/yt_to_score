@@ -86,10 +86,11 @@ def system_fingerprint(gray, notation):
     groups=system_groups(gray,notation)
     if len(groups) != 1:
         return None
-    scale=900/gray.shape[1]
-    resized=cv2.resize(gray,(900,max(1,round(len(gray)*scale))),interpolation=cv2.INTER_AREA)
-    target=np.full((600,900),255,np.uint8)
-    offset=110-round(groups[0][0]*scale)
+    width=1600 if notation == 'bass' and not staffs(gray) else 900
+    scale=width/gray.shape[1]
+    resized=cv2.resize(gray,(width,max(1,round(len(gray)*scale))),interpolation=cv2.INTER_AREA)
+    target=np.full((round(600*width/900),width),255,np.uint8)
+    offset=round(110*width/900)-round(groups[0][0]*scale)
     source_top,target_top=max(0,-offset),max(0,offset)
     length=min(len(resized)-source_top,len(target)-target_top)
     if length <= 0:return None

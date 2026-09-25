@@ -67,7 +67,11 @@ def _staffs_at(gray, threshold, rules=5):
             match = None
             for last in centers[i+rules-1:]:
                 spacing = (last-centers[i])/(rules-1)
-                if not 3 <= spacing <= min(35, h/(rules+2)):
+                # A tightly cropped four-string TAB needs only three gaps.
+                # Requiring extra blank margins prevents recognizing it after
+                # system splitting, so valid barlines cannot be joined.
+                height_gaps = rules-1 if rules == 4 else rules+2
+                if not 3 <= spacing <= min(35, h/height_gaps):
                     continue
                 targets = [min(centers, key=lambda y: abs(y-(centers[i]+n*spacing))) for n in range(rules)]
                 if all(abs(y-(centers[i]+n*spacing)) <= max(1.5, spacing*.12) for n,y in enumerate(targets)):
@@ -201,17 +205,17 @@ def tab_signature(gray, rules=6):
     # A cursor/selection box spans the staff. Shorter rhythm stems must remain:
     # filtering at their length makes one-pixel compression changes toggle whole
     # stems on/off and creates false score changes.
-    vertical_length = spacing*(6 if rules == 6 else 2.5)
+    vertical_length = spacing*(6 if rules == 6 else 4)
     vertical = cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((max(12, int(vertical_length)), 1), np.uint8))
     horizontal = cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((1, max(30, gray.shape[1]//20)), np.uint8))
     ink[(vertical | horizontal) > 0] = 0
-    if rules == 6:
+    if rules in (4,6):
         # Mask rules after detecting cursors, so the mask does not break a
         # continuous playback box into short fragments that escape removal.
         for first,last,_ in groups:
-            for row in np.linspace(first,last,6).round().astype(int):
+            for row in np.linspace(first,last,rules).round().astype(int):
                 ink[max(0,row-1):min(len(ink),row+2)]=0
-    return signature(255-ink*255, max_width=1600 if rules == 6 else 900)
+    return signature(255-ink*255, max_width=1600)
 
 
 def difference(a, b, *, fine=False, stable=False):

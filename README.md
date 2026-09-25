@@ -7,8 +7,8 @@ and print output. Capture, review, crop editing, and phone layouts share the sam
 
 ## Start
 
-For Windows x64, download `Video-Sheet-to-PDF-0.6.0-win-x64.exe` from the
-[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.6.0)
+For Windows x64, download `Video-Sheet-to-PDF-0.7.0-win-x64.exe` from the
+[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.7.0)
 and double-click it. This portable executable includes Python, FFmpeg, and Node.js;
 no separate installation is needed. The first launch extracts the bundled app.
 Working projects and cached videos are stored under
@@ -52,7 +52,9 @@ later returns to a passage remain part of the score. A transient selection box
 at the start of an editor recording can still create an extra initial line;
 remove it in Review, or set the extraction start after that transient.
 
-Bass and Piano also work best with stationary panels that advance in steps. Moving highlights are filtered, and matching complete systems at consecutive page boundaries are removed. Reflowed or horizontally overlapping partial measures can remain and need **Exclude line** or **Edit crop**. Bass TAB with five or six string rules and piano layouts with more than two staves per system currently need manual capture.
+Drums, Bass and Piano also tolerate small panel nudges when barlines confirm that the whole panel moved. Both piano hands and combined bass staff/TAB remain part of the comparison. Changed noteheads, pitches, rhythm marks and new notation exposed at panel edges prevent an uncertain alignment from discarding a capture. Thin colored playback cursors and light washes are filtered; an opaque cursor hiding notes can still require review.
+
+Standalone four-string Bass TAB uses finer fret comparison and masks highlighted string fragments. Confident horizontal overlaps join at common barlines, with full panels retained for **Edit crop**. Combined bass notation and Piano use complete-system matching instead of partial-measure joins. All modes work best with stationary panels that advance in steps. Reflowed or uncertain overlaps can remain and need **Exclude line** or **Edit crop**. Bass TAB with five or six string rules and piano layouts with more than two staves per system currently need manual capture.
 
 Left and right margins can each be set from 0 to 40 mm, including decimal values. Smaller margins enlarge the score lines to fill the available width; top and bottom margins stay at 12 mm. White space inside a captured image is controlled by the score-area crop. Choose side margins that fit your printer's printable area.
 
