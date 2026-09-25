@@ -1,6 +1,6 @@
 {
   "name": "drum-sheet-workspace",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": true,
   "description": "A local video-to-sheet-music PDF workspace with a shared web interface.",
   "main": "desktop/main.cjs",
@@ -13,7 +13,8 @@
     "build:win": "node scripts/build-windows.cjs",
     "test:languages": "node scripts/test-languages.cjs",
     "test:guitar": "node scripts/test-guitar-desktop.cjs",
-    "test:instruments": "node scripts/test-instruments-desktop.cjs"
+    "test:instruments": "node scripts/test-instruments-desktop.cjs",
+    "test:loading": "node scripts/test-loading.cjs"
   },
   "devDependencies": {
     "electron": "44.4.5",

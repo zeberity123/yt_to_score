@@ -46,6 +46,7 @@
       <div class="video-workspace">
         <div id="video-stage" class="video-stage">
           <div id="video-empty" class="empty-state"><div class="staff-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><b>♪</b></div><h2>Load a video</h2><p>Paste a YouTube link or choose a file.<br>Then draw around the sheet music to capture.</p></div>
+          <div id="video-loading" class="empty-state video-loading" role="status" aria-live="polite" hidden><div class="loading-spinner" aria-hidden="true"></div><h2>Loading video…</h2></div>
           <div id="video-fit" class="media-fit" hidden><video id="video" playsinline preload="metadata"></video><div id="video-crop" class="crop-overlay" aria-label="Drag to select score area"><div class="crop-box"><span class="crop-label">SCORE AREA</span><i data-handle="nw"></i><i data-handle="ne"></i><i data-handle="sw"></i><i data-handle="se"></i></div></div></div>
         </div>
         <div class="timeline"><output id="current-time">00:00.0</output><input type="range" id="seek" min="0" max="1" step="0.01" value="0" aria-label="Video timeline"><output id="duration">00:00</output></div>

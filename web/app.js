@@ -10,6 +10,7 @@ $('review-speed').replaceChildren(...Array.from($('speed').options, option => op
 let state = null, selected = 0, tab = 'capture', requesting = false, uploading = false;
 let listSignature = '', currentMedia = '', job = null, errorShown = '', editorIndex = 0;
 let polling = false, initialized = false, titleDirty = false;
+let importingVideo = false, mediaLoading = false;
 const downloaded = new Set();
 
 function fail(error) { $('error-text').textContent = error.message || String(error); $('error').hidden = false; }
@@ -72,6 +73,7 @@ function setReviewAudio(enabled) {
   updateControls();
 }
 async function togglePlayback() {
+  if (job === 'load' || importingVideo || mediaLoading) return;
   if (!state?.video || video.readyState < 2 || video.seeking) return;
   if (video.paused) {
     if (tab === 'review') setReviewAudio(true);
@@ -87,11 +89,10 @@ function render() {
   $('manual').setAttribute('aria-pressed', String(manual));
   $('auto-controls').hidden = manual;
   $('manual-controls').hidden = !manual;
-  $('video-empty').hidden = !!state.video;
-  $('video-fit').hidden = !state.video;
   const mediaKey = state.video ? state.videoId : '';
   if (mediaKey !== currentMedia) {
     currentMedia = mediaKey;
+    mediaLoading = !!state.video;
     if (state.video) { setReviewAudio(true); video.src = api.url('video', {v:state.revision}); video.load(); }
     else { video.pause(); video.removeAttribute('src'); video.load(); }
   }
@@ -149,6 +150,11 @@ function renderSelection() {
   }
 }
 function updateControls() {
+  const loadingVideo = job === 'load' || importingVideo || mediaLoading;
+  $('video-loading').hidden = !loadingVideo;
+  $('video-empty').hidden = loadingVideo || !!state?.video;
+  $('video-fit').hidden = loadingVideo || !state?.video;
+  $('video-stage').setAttribute('aria-busy', String(loadingVideo));
   const locked = !state || state.busy || requesting || uploading;
   const loaded = !!state?.video;
   const line = state?.lines[selected];
@@ -181,16 +187,21 @@ async function choose(kind) {
 }
 async function upload(file, kind) {
   if (!file) return;
-  uploading = true; updateControls();
+  uploading = true; importingVideo = kind === 'video'; updateControls();
   try {
     const path = await api.upload(file, fraction => $('status').textContent = `Importing ${file.name} · ${Math.round(fraction*100)}%`);
     if (kind === 'video') { $('source').value = path; await loadVideo(); }
     else { video.pause(); titleDirty = false; await command('open', {path}); switchTab('review'); }
-  } finally { uploading = false; updateControls(); }
+  } finally { uploading = false; importingVideo = false; updateControls(); }
 }
 async function loadVideo() {
   video.pause(); job = 'load'; titleDirty = false;
-  await command('load', {source:$('source').value, layout:$('layout').value, notation:$('notation').value});
+  try {
+    await command('load', {source:$('source').value, layout:$('layout').value, notation:$('notation').value});
+    // A cached/local video can finish before polling ever sees a busy state.
+    if (!state?.busy) job = null;
+  } catch (error) { job = null; throw error; }
+  finally { updateControls(); }
 }
 listen('capture-tab','click', () => switchTab('capture'));
 listen('review-tab','click', () => switchTab('review'));
@@ -253,7 +264,8 @@ listen('seek','input', () => { video.pause(); video.currentTime = Number($('seek
 video.addEventListener('timeupdate', () => { $('seek').value = video.currentTime; $('current-time').textContent = clock(video.currentTime,true); });
 video.addEventListener('loadedmetadata', () => { video.playbackRate = Number($('speed').value); video.currentTime = state.mode === 'manual' ? 0 : Math.min(20, state.duration*.1); fitVideo(); });
 for (const event of ['loadeddata','seeked','seeking','play','pause','ended']) video.addEventListener(event, () => { $('play').textContent = $('review-play').textContent = video.paused ? '▶ Play' : 'Ⅱ Pause'; updateControls(); });
-video.addEventListener('error', () => { if (video.getAttribute('src')) fail('This video could not be played. Reload it or try an H.264 MP4 file.'); });
+video.addEventListener('loadeddata', () => { mediaLoading = false; updateControls(); fitVideo(); });
+video.addEventListener('error', () => { mediaLoading = false; updateControls(); if (video.getAttribute('src')) fail('This video could not be played. Reload it or try an H.264 MP4 file.'); });
 listen('pdf-title','input', () => { titleDirty = true; });
 listen('for-print','click', () => {
   $('gap').value = '0';

@@ -61,6 +61,7 @@
   "No audio track in this file.": ["이 파일에는 오디오가 없습니다.", "このファイルには音声がありません。"],
   "Audio in Review & export": ["검토 및 내보내기에서도 오디오 재생", "確認・書き出し画面でも音声を再生"],
   "Load a video": ["동영상을 불러오세요", "動画を読み込んでください"],
+  "Loading video…": ["동영상 불러오는 중…", "動画を読み込み中…"],
   "Paste a YouTube link or choose a file.": ["YouTube 링크를 붙여넣거나 파일을 선택하세요.", "YouTubeリンクを貼り付けるか、ファイルを選択してください。"],
   "Then draw around the sheet music to capture.": ["그런 다음 캡처할 악보 영역을 드래그하세요.", "次に、取り込む楽譜の範囲をドラッグしてください。"],
   "Drag to select score area": ["드래그하여 악보 영역 선택", "ドラッグして楽譜の範囲を選択"],

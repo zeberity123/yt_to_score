@@ -53,3 +53,6 @@ dialog{border:1px solid #dae1d0;border-radius:18px;background:var(--paper);color
 .line-actions .button-row{flex-wrap:wrap;max-width:100%}
 .line-actions .button-row>button{flex:0 0 auto;min-width:max-content;min-height:44px;padding:11px 16px;font-size:12px}
 @media(max-width:760px){.line-actions .button-row{display:grid;grid-template-columns:repeat(2,minmax(max-content,1fr));width:100%}}
+.loading-spinner{width:42px;height:42px;margin:0 auto 20px;border:3px solid #536749;border-top-color:#d7ed9c;border-radius:50%;animation:loading-spin .9s linear infinite}
+@keyframes loading-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.loading-spinner{animation:none}}
