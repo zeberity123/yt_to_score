@@ -7,8 +7,8 @@ and print output. Capture, review, crop editing, and phone layouts share the sam
 
 ## Start
 
-For Windows x64, download `Video-Sheet-to-PDF-0.9.0-win-x64.exe` from the
-[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.9.0)
+For Windows x64, download `Video-Sheet-to-PDF-0.9.1-win-x64.exe` from the
+[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.9.1)
 and double-click it. This portable executable includes Python, FFmpeg, and Node.js;
 no separate installation is needed. The first launch extracts the bundled app.
 Working projects and cached videos are stored under

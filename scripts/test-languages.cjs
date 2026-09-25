@@ -34,7 +34,7 @@ async function launch() {
     await page.locator('#manual').click();
     await page.locator('#add-line').click();
     await page.locator('#review-tab').click();
-    await page.waitForFunction(() => document.querySelector('#preview-title').textContent === '악보 줄 01');
+    await page.waitForFunction(() => document.querySelector('#preview-title').textContent === '악보 이미지 01');
     await page.locator('#pdf-title').fill('기타 楽譜 My title');
     await page.locator('#edit-line').click();
     await page.locator('#language').evaluate(node => {node.value='ja';node.dispatchEvent(new Event('change'));});
