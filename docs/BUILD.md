@@ -13,7 +13,7 @@ with PyInstaller, and packages an Electron portable executable with electron-bui
 It downloads the license for the exact Node.js runtime being bundled if the local
 installation does not contain it. Packaging tools and Electron may require downloads.
 
-The output is `dist/Video-Sheet-to-PDF-0.5.2-win-x64.exe`. The unpacked application
+The output is `dist/Video-Sheet-to-PDF-0.6.0-win-x64.exe`. The unpacked application
 is also available at `dist/win-unpacked/Video Sheet to PDF.exe` for verification.
 The portable application extracts at launch and stores working data under Electron's
 user-data folder (`%APPDATA%/Video Sheet to PDF/output`), outside the temporary app.
@@ -37,9 +37,10 @@ tools on PATH and tests video/audio conversion using the bundled FFmpeg. Build
 directories, diagnostics, samples, cached downloads, and private
 projects are excluded from source control and the release.
 
-`npm run test:guitar` additionally checks the two supplied guitar reference videos
+`npm run test:guitar` additionally checks the three supplied guitar reference videos
 stored as `diagnostics/guitar/t_dHA1lgeAU-av.mp4` and
-`diagnostics/guitar/UDdLxCuqRQ8-av.mp4`. They are local test inputs and are not
+`diagnostics/guitar/UDdLxCuqRQ8-av.mp4`, plus the duplicate-capture regression
+`diagnostics/duplicates/_iF6NXbkCws-av.mp4`. They are local test inputs and are not
 distributed. Automated Python tests cover synthetic six-string TAB, white ink
 on moving dark backgrounds, changing fret numbers, playback boxes, and barline
 overlap matching without external media.

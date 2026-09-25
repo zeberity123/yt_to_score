@@ -17,11 +17,11 @@ licenses.mkdir(parents=True, exist_ok=True)
 # Draw the same staff and note motif as web/icon.svg at icon resolution.
 icon = Image.new('RGBA', (256, 256))
 draw = ImageDraw.Draw(icon)
-draw.rounded_rectangle((0, 0, 255, 255), radius=72, fill='#234a3b')
+draw.rounded_rectangle((0, 0, 255, 255), radius=72, fill='#234a46')
 for y in (92, 120, 148, 176):
-    draw.line((48, y, 208, y), fill='#91a98a', width=8)
-draw.ellipse((80, 154, 142, 198), fill='#e8f1d8')
-draw.rectangle((132, 60, 144, 176), fill='#e8f1d8')
+    draw.line((48, y, 208, y), fill='#69a49a', width=8)
+draw.ellipse((80, 154, 142, 198), fill='#d8f7ef')
+draw.rectangle((132, 60, 144, 176), fill='#d8f7ef')
 icon.save(assets/'app.ico', sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])
 
 excluded = {'pip','setuptools','pytest','pymupdf','pyinstaller','pyinstaller-hooks-contrib',

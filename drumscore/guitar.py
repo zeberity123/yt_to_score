@@ -5,6 +5,27 @@ import numpy as np
 from .vision import difference, runs, staffs, tab_signature
 
 
+def aligned_difference(a, b, *, fine=False, stable=False):
+    """Tolerate small panel nudges, but compare every interior fret after alignment."""
+    direct = difference(a,b,fine=fine,stable=stable)
+    if direct <= .035 or a.shape != b.shape or min(a.shape) < 20:
+        return direct
+    shift, confidence = cv2.phaseCorrelate(a.astype(np.float32),b.astype(np.float32))
+    dx,dy = (round(value) for value in shift)
+    if confidence < .5 or abs(dx) > a.shape[1]*.03 or abs(dy) > 4:
+        return direct
+    ax,bx=max(0,-dx),max(0,dx)
+    ay,by=max(0,-dy),max(0,dy)
+    height,width=a.shape[0]-abs(dy),a.shape[1]-abs(dx)
+    # The outer pixels can contain incomplete digits at the video boundary.
+    edge=max(3,round(a.shape[1]*.01))
+    left=a[ay:ay+height,ax+edge:ax+width-edge]
+    right=b[by:by+height,bx+edge:bx+width-edge]
+    if min(int(left.sum()),int(right.sum())) < 100:
+        return direct
+    return min(direct,difference(left,right,fine=fine,stable=stable))
+
+
 def barlines(image):
     groups = staffs(image, 6)
     if len(groups) != 1:
@@ -20,7 +41,7 @@ def overlap_cut(previous, following):
     Whole original panels remain available through the crop editor. Ambiguous
     matches leave both captures intact rather than guessing which notes to omit.
     """
-    for left, right in ((.8,.2),(.65,.35),(.4,.6)):
+    for left, right in ((.8,.2),(.65,.35),(.4,.6),(.08,.92)):
         result = _overlap_cut(previous, following, left, right)
         if result:
             return result
@@ -51,13 +72,19 @@ def _overlap_cut(previous, following, left, right):
     if abs(matrix[0,0]-1) > .005 or abs(matrix[1,0]) > .003:
         return None
     dx, dy = round(matrix[0,2]), round(matrix[1,2])
-    if not width*.4 < dx < width*.96 or abs(dy) > 100:
+    if not width*.07 < dx < width*.96 or abs(dy) > 100:
         return None
     ay, by = max(0,dy), max(0,-dy)
     height = min(previous.shape[0]-ay, following.shape[0]-by)
     a = previous[ay:ay+height, dx:]
     b = following[by:by+height, :width-dx]
-    if difference(tab_signature(a), tab_signature(b)) > .10:
+    # Panel boundaries can clip a digit/stem differently in the two views.
+    # Verify the shared interior rather than treating those edge fragments as
+    # different music. Still require enough common notation to make a safe cut.
+    edge=max(20,round(width*.02))
+    if a.shape[1] < edge*2+80:
+        return None
+    if difference(tab_signature(a[:,edge:-edge]), tab_signature(b[:,edge:-edge])) > .10:
         return None
     bars_b = barlines(following)
     for x in reversed(barlines(previous)):

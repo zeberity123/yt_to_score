@@ -88,6 +88,10 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
     overlap_count = 0
     tab_panel = None
     tab_joins = 0
+    compare_systems = difference
+    if notation == 'guitar':
+        from .guitar import aligned_difference
+        compare_systems = aligned_difference
 
     def flush():
         nonlocal current, view_number, rejected, previous_systems, overlap_count, tab_panel, tab_joins
@@ -111,15 +115,18 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
             if remove_overlap and len(strips) > 1 and len(previous_systems) > 1:
                 for size in range(min(len(systems), len(previous_systems)), 0, -1):
                     pairs = zip(previous_systems[-size:], systems[:size])
-                    if all(a is not None and b is not None and difference(a, b, fine=current['fine']) < .035 for a, b in pairs):
+                    if all(a is not None and b is not None and compare_systems(a, b, fine=current['fine'], stable=current['stable']) < .035 for a, b in pairs):
                         overlap = size
                         break
             elif remove_overlap and len(strips) == 1 and previous_systems:
                 a, b = previous_systems[-1], systems[0]
-                if a is not None and b is not None and difference(a, b, fine=current['fine']) < .035:
+                if a is not None and b is not None and compare_systems(a, b, fine=current['fine'], stable=current['stable']) < .035:
                     overlap = 1
             overlap_count += overlap
-            previous_systems = systems
+            # Keep the accepted anchor when discarding a nudged single panel.
+            # Otherwise repeated tiny shifts could hide a genuinely scrolling view.
+            if not (notation == 'guitar' and overlap == 1 and len(systems) == 1):
+                previous_systems = systems
             if len(segments) != 1:
                 tab_panel = None
             if notation == 'guitar' and remove_overlap and not overlap and len(segments) == 1:
@@ -163,7 +170,7 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
             check_cancel(cancel)
             gray = clean(region.crop(frame))
             sig = notation_signature(gray,notation) if paired else tab_signature(gray) if notation == 'guitar' else signature(gray)
-            if current is not None and difference(current["signature"], sig, fine=current['fine']) <= threshold:
+            if current is not None and difference(current["signature"], sig, fine=current['fine'], stable=current['stable']) <= threshold:
                 current["count"] += 1
                 # A small reservoir spreads the median across the entire stable view.
                 if len(current["samples"]) < 9:
@@ -179,7 +186,10 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
                                "frame": frame.copy(),
                                # Translucent white-on-video TAB needs the same
                                # speckle tolerance as moving drum-score panels.
-                               "fine": rules == 6 and np.mean(region.crop(frame) > 200) > .55}
+                               "fine": rules == 6 and np.mean(region.crop(frame) > 200) > .55,
+                               # HD retains enough pixels to reject narrow noise
+                               # while still checking individual fret changes.
+                               "stable": rules == 6 and gray.shape[1] >= 1500}
             progress(f"Scanning {t:.1f}s / {end:.1f}s · {len(project.lines)} lines", (t-start)/(end-start))
         flush()
     finally:

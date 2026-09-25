@@ -12,10 +12,11 @@ const root=path.resolve(__dirname,'..');
   try {
     await page.waitForFunction(()=>!document.querySelector('#open-project').disabled);
     await page.locator('#language').selectOption('ko');
-    for (const name of ['t_dHA1lgeAU','UDdLxCuqRQ8']) {
+    for (const name of ['t_dHA1lgeAU','UDdLxCuqRQ8','_iF6NXbkCws']) {
       await page.locator('#capture-tab').click();
       await page.locator('#notation').selectOption('guitar');
-      await page.locator('#source').fill(path.join(root,'diagnostics','guitar',`${name}-av.mp4`));
+      const folder=name==='_iF6NXbkCws'?'duplicates':'guitar';
+      await page.locator('#source').fill(path.join(root,'diagnostics',folder,`${name}-av.mp4`));
       await page.locator('#load-video').click();
       await page.waitForFunction(()=>!document.querySelector('#detect').disabled,null,{timeout:60000});
       await page.locator('#advanced').evaluate(node=>node.open=true);
@@ -23,7 +24,7 @@ const root=path.resolve(__dirname,'..');
       await page.locator('#extract').click();
       await page.waitForFunction(()=>!document.querySelector('#review-screen').hidden,null,{timeout:90000});
       const count=await page.locator('.line-item').count();
-      assert.ok(count>=4 && count<=6,`${name}: ${count}`);
+      assert.ok(count>=4 && count<=(name==='_iF6NXbkCws'?7:6),`${name}: ${count}`);
       await page.locator('#edit-line').click();
       await page.waitForFunction(()=>document.querySelector('#editor-image').naturalWidth>0);
       assert.equal(await page.locator('#editor-image').evaluate(node=>node.naturalWidth),1920);
@@ -47,6 +48,6 @@ const root=path.resolve(__dirname,'..');
     assert.equal(await app.evaluate(()=>globalThis.guitarDownloadState),'completed');
     assert.ok(fs.statSync(path.join(root,'diagnostics',`${title}.pdf`)).size>1000);
     assert.deepEqual(errors,[]);
-    console.log('Passed: both guitar examples, automatic crop, TAB extraction, retained source editing, Korean UI and CJK PDF title.');
+    console.log('Passed: three guitar examples, automatic crop, TAB extraction, duplicate regression, retained source editing, Korean UI and CJK PDF title.');
   } finally {await app.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

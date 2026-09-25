@@ -18,6 +18,8 @@ def clean_notation(frame, notation):
         light_groups=staffs(light,4)
         on_paper=any(np.mean(light[first:last+1]>200)>.60 for first,last,_ in light_groups)
         gray=light if on_paper or np.mean(light>200)>.55 else clean_tab(frame,4)
+    elif notation == 'guitar':
+        gray = clean_tab(frame)
     else:
         gray = clean_score(frame)
     if frame.ndim == 3:
@@ -33,6 +35,8 @@ def clean_notation(frame, notation):
 
 
 def system_groups(gray, notation):
+    if notation == 'guitar':
+        return staffs(gray,6)
     ordinary = staffs(gray)
     if notation == 'bass':
         tabs = staffs(gray, 4)
@@ -114,7 +118,9 @@ def detect_region(frame, notation, mode='auto'):
     # Looking at top/bottom panels separately avoids choosing ink polarity from
     # the much larger performance video or piano-roll visualization.
     candidates=[]
-    for y0,y1 in ((0,h),(0,int(h*.48)),(int(h*.5),h)):
+    panels=[(0,h),(0,int(h*.48)),(int(h*.5),h)]
+    if notation == 'guitar':panels.append((int(h*.7),h))
+    for y0,y1 in panels:
         gray=clean_notation(frame[y0:y1],notation)
         groups=system_groups(gray,notation)
         for first,last,spacing in groups:
@@ -130,7 +136,7 @@ def detect_region(frame, notation, mode='auto'):
     first,last,spacing=max(unique,key=lambda g:g[1]-g[0])
     raw=cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
     is_light=np.mean(raw[first:last+1]>200)>.55
-    margin=7 if is_light else 5
+    margin=(9 if notation == 'guitar' else 7) if is_light else 5
     top=max(0,int(first-spacing*margin))
     bottom=min(h,int(last+spacing*margin))
     if is_light:

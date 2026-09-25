@@ -52,6 +52,8 @@ async function launch() {
   } finally {await app.close();}
   ({app,page} = await launch());
   try {
+    // Localization loads independently of the backend controls at startup.
+    await page.waitForFunction(() => document.documentElement.lang === 'ja' && document.querySelector('#language').value === 'ja');
     assert.equal(await page.locator('#language').inputValue(),'ja');
     assert.ok((await page.locator('#open-project').textContent()).includes('プロジェクトを開く'));
     await page.locator('#language').selectOption('en');

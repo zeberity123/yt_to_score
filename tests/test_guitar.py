@@ -4,7 +4,7 @@ from PIL import Image
 
 from drumscore.extract import Extraction, extract
 from drumscore.vision import Region, auto_region, clean_tab, staffs, split_systems, tab_signature, difference
-from drumscore.guitar import overlap_cut
+from drumscore.guitar import overlap_cut, aligned_difference
 
 
 def tab(note='12', box=None):
@@ -84,3 +84,70 @@ def test_overlapping_panels_join_at_the_same_barline():
     cut=overlap_cut(canvas[:,:1000],canvas[:,700:1700])
     assert cut is not None
     assert abs(cut[0]-765)<=2 and abs(cut[1]-65)<=2
+
+
+def test_small_panel_nudge_matches_but_a_changed_fret_does_not():
+    original=tab_signature(clean_tab(tab()))
+    shifted=cv2.warpAffine(original,np.float32([[1,0,-12],[0,1,0]]),(original.shape[1],original.shape[0]))
+    assert difference(original,shifted,fine=True)>.035
+    assert aligned_difference(original,shifted,fine=True)<.035
+    changed=tab()
+    cv2.rectangle(changed,(355,163),(388,186),(255,255,255),-1)
+    cv2.putText(changed,'19',(360,182),cv2.FONT_HERSHEY_SIMPLEX,.6,(20,20,20),2)
+    signature=tab_signature(clean_tab(changed))
+    signature=cv2.warpAffine(signature,np.float32([[1,0,-12],[0,1,0]]),(signature.shape[1],signature.shape[0]))
+    assert aligned_difference(original,signature,fine=True)>.035
+
+
+def test_hd_comparison_retains_a_single_changed_fret(tmp_path):
+    a=tab();b=a.copy()
+    cv2.rectangle(b,(75,163),(108,186),(255,255,255),-1)
+    cv2.putText(b,'14',(80,182),cv2.FONT_HERSHEY_SIMPLEX,.6,(20,20,20),2)
+    frames=[cv2.resize(image,(1920,416)) for image in (a,b)]
+    a,b=[tab_signature(clean_tab(image)) for image in frames]
+    assert difference(a,b,fine=True,stable=True)>.035
+    filename=tmp_path/'single-fret.avi'
+    writer=cv2.VideoWriter(str(filename),cv2.VideoWriter_fourcc(*'MJPG'),6,(1920,416))
+    assert writer.isOpened()
+    for frame in frames:
+        for _ in range(12):writer.write(frame)
+    writer.release()
+    project=extract(filename,tmp_path,region=Region(),notation='guitar',interval=.25)
+    assert len(project.lines)==2
+
+
+def test_nudged_tab_is_not_repeated_but_later_return_is_kept(tmp_path):
+    original=tab()
+    shifted=cv2.warpAffine(original,np.float32([[1,0,-12],[0,1,0]]),(1000,260),borderValue=(255,255,255))
+    filename=tmp_path/'nudge.avi'
+    writer=cv2.VideoWriter(str(filename),cv2.VideoWriter_fourcc(*'MJPG'),6,(1000,260))
+    assert writer.isOpened()
+    for frame in (original,shifted,tab('19'),original):
+        for _ in range(12):writer.write(frame)
+    writer.release()
+    project=extract(filename,tmp_path,region=Region(),notation='guitar',interval=.25)
+    assert len(project.lines)==3
+
+
+def test_auto_crop_keeps_interrupted_strings_and_upper_annotations():
+    frame=np.full((700,1000,3),50,np.uint8)
+    frame[410:670]=tab()
+    # Many digits interrupt the left part of all string rules.
+    for x in range(40,640,50):cv2.rectangle(frame,(x,480),(x+8,590),(255,255,255),-1)
+    region=auto_region(frame,notation='guitar')
+    assert region.left==0 and region.right==1
+    assert region.top*700 <= 450
+
+
+def test_annotation_row_is_not_mistaken_for_the_first_string():
+    image=clean_tab(tab())
+    cv2.line(image,(0,55),(420,55),80,1)
+    assert staffs(image,6)==[(75,175,20.0)]
+
+
+def test_highlighted_string_fragments_do_not_change_the_score_signature():
+    a=clean_tab(tab())
+    for row in (75,95,115,135,155):a[row:row+2,:]=140
+    b=a.copy()
+    for row in (75,95,115,135,155):b[row:row+2,250:650]=185
+    assert difference(tab_signature(a),tab_signature(b),fine=True)<.035

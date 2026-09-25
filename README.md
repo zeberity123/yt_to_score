@@ -2,10 +2,13 @@
 
 A Windows Electron app that turns the **sheet music already visible in a YouTube video** into a printable PDF. Its responsive web interface connects to a local Python processing engine. It captures and arranges the score images; it does not transcribe the audio or produce editable MusicXML.
 
+The workspace uses a charcoal and teal studio theme, with white score previews
+and print output. Capture, review, crop editing, and phone layouts share the same controls.
+
 ## Start
 
-For Windows x64, download `Video-Sheet-to-PDF-0.5.2-win-x64.exe` from the
-[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.5.2)
+For Windows x64, download `Video-Sheet-to-PDF-0.6.0-win-x64.exe` from the
+[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.6.0)
 and double-click it. This portable executable includes Python, FFmpeg, and Node.js;
 no separate installation is needed. The first launch extracts the bundled app.
 Working projects and cached videos are stored under
@@ -41,6 +44,13 @@ Choose an instrument under **Notation** before loading or extracting:
 Bass and Piano detect score panels at the top or bottom of the video and complete systems on score pages. Check the detected crop before extracting, especially when the layout changes. Projects remember their notation mode; the `.drumscore` extension remains compatible with existing projects.
 
 Guitar extraction handles stationary panels that advance in steps. It ignores moving playback boxes and joins confidently matched overlapping panels at barlines; full panels remain available through **Edit crop**. Check partial measures at panel edges: uncertain overlaps are retained, and continuous scrolling, combined staff-plus-TAB systems, or other string counts may need manual capture. This is image capture, not editable tablature or audio transcription.
+
+Guitar comparison masks string-rule fragments and tolerates small panel nudges,
+so moving highlights and minor shifts create fewer duplicate captures. Automatic
+cropping keeps the full panel width and upper annotations. Real fret changes and
+later returns to a passage remain part of the score. A transient selection box
+at the start of an editor recording can still create an extra initial line;
+remove it in Review, or set the extraction start after that transient.
 
 Bass and Piano also work best with stationary panels that advance in steps. Moving highlights are filtered, and matching complete systems at consecutive page boundaries are removed. Reflowed or horizontally overlapping partial measures can remain and need **Exclude line** or **Edit crop**. Bass TAB with five or six string rules and piano layouts with more than two staves per system currently need manual capture.
 

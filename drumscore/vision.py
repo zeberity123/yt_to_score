@@ -77,6 +77,18 @@ def _staffs_at(gray, threshold, rules=5):
                     match = targets
                     break
             if match:
+                if rules == 6:
+                    # Dense fret/annotation rows can resemble a seventh string.
+                    # Prefer the six-rule window with stronger continuous lines.
+                    while True:
+                        spacing=(match[-1]-match[0])/5
+                        following=[y for y in centers if abs(y-match[-1]-spacing)<=max(1.5,spacing*.12)]
+                        if not following:
+                            break
+                        next_row=min(following,key=lambda y:abs(y-match[-1]-spacing))
+                        if horizontal[next_row].sum() <= horizontal[match[0]].sum()*1.1:
+                            break
+                        match=match[1:]+[next_row]
                 found.append((match[0], match[-1], (match[-1]-match[0])/(rules-1)))
                 i = centers.index(match[-1])+1
             else:
@@ -122,7 +134,7 @@ def clean_tab(frame, rules=6):
 
 
 def auto_region(frame, mode="auto", notation="staff"):
-    if notation in ('bass', 'piano'):
+    if notation in ('guitar', 'bass', 'piano'):
         from .notation import detect_region
         return detect_region(frame, notation, mode)
     h, w = frame.shape[:2]
@@ -169,8 +181,8 @@ def auto_region(frame, mode="auto", notation="staff"):
     return Region(left/w, top/h, right/w, 1)
 
 
-def signature(gray):
-    scale = min(1, 900/gray.shape[1])
+def signature(gray, max_width=900):
+    scale = min(1, max_width/gray.shape[1])
     small = cv2.resize(gray, (round(gray.shape[1]*scale), max(1, round(gray.shape[0]*scale))),
                        interpolation=cv2.INTER_AREA)
     ink = (small < 150).astype(np.uint8)
@@ -184,13 +196,25 @@ def tab_signature(gray, rules=6):
     ink = (gray < 150).astype(np.uint8)
     groups = staffs(gray, rules)
     spacing = groups[0][2] if groups else max(5, gray.shape[0]/14)
-    vertical = cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((max(12, int(spacing*2.5)), 1), np.uint8))
+    if groups and rules == 6:
+        ink[:max(0,int(groups[0][0]-spacing*5))]=0
+    # A cursor/selection box spans the staff. Shorter rhythm stems must remain:
+    # filtering at their length makes one-pixel compression changes toggle whole
+    # stems on/off and creates false score changes.
+    vertical_length = spacing*(6 if rules == 6 else 2.5)
+    vertical = cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((max(12, int(vertical_length)), 1), np.uint8))
     horizontal = cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((1, max(30, gray.shape[1]//20)), np.uint8))
     ink[(vertical | horizontal) > 0] = 0
-    return signature(255-ink*255)
+    if rules == 6:
+        # Mask rules after detecting cursors, so the mask does not break a
+        # continuous playback box into short fragments that escape removal.
+        for first,last,_ in groups:
+            for row in np.linspace(first,last,6).round().astype(int):
+                ink[max(0,row-1):min(len(ink),row+2)]=0
+    return signature(255-ink*255, max_width=1600 if rules == 6 else 900)
 
 
-def difference(a, b, *, fine=False):
+def difference(a, b, *, fine=False, stable=False):
     """Ink-relative error; one-pixel compression jitter is tolerated."""
     if a.shape != b.shape:
         return 1.0
@@ -198,7 +222,7 @@ def difference(a, b, *, fine=False):
     da, db = cv2.dilate(a, kernel), cv2.dilate(b, kernel)
     changed = (a & (1-db)) | (b & (1-da))
     # Thin compression noise on stems must not create a new score view.
-    if fine:
+    if fine and not stable:
         count, labels, stats, _ = cv2.connectedComponentsWithStats(changed)
         keep = stats[:, cv2.CC_STAT_AREA] >= 3
         keep[0] = False
@@ -208,9 +232,10 @@ def difference(a, b, *, fine=False):
                                  borderType=cv2.BORDER_CONSTANT, borderValue=0)
     score = float(changed.sum()) / max(1, int(a.sum())+int(b.sum()))
     # A single changed note matters even when the rest of a large page is identical.
+    tile_width = 100 if fine else 150
     for y in range(0, a.shape[0], 100):
-        for x in range(0, a.shape[1], 150):
-            area = np.s_[y:y+100, x:x+150]
+        for x in range(0, a.shape[1], tile_width):
+            area = np.s_[y:y+100, x:x+tile_width]
             count = int(a[area].sum())+int(b[area].sum())
             if count >= 100:
                 score = max(score, float(changed[area].sum())/count)
@@ -271,10 +296,11 @@ def system_signature(image, rules=5):
     groups = staffs(image, rules)
     if len(groups) != 1:
         return None
-    scale = 900/image.shape[1]
-    resized = cv2.resize(image, (900, max(1, round(len(image)*scale))), interpolation=cv2.INTER_AREA)
-    target = np.full((220, 900), 255, np.uint8)
-    offset = 90-round(groups[0][0]*scale)
+    width = 1600 if rules == 6 else 900
+    scale = width/image.shape[1]
+    resized = cv2.resize(image, (width, max(1, round(len(image)*scale))), interpolation=cv2.INTER_AREA)
+    target = np.full((round(220*width/900), width), 255, np.uint8)
+    offset = round(90*width/900)-round(groups[0][0]*scale)
     source_top = max(0, -offset)
     target_top = max(0, offset)
     length = min(len(resized)-source_top, len(target)-target_top)
