@@ -6,5 +6,10 @@ if not exist ".venv\Scripts\python.exe" (
     pause
     exit /b 1
 )
-".venv\Scripts\python.exe" -m drumscore
+if exist "node_modules\electron\dist\electron.exe" (
+    "node_modules\electron\dist\electron.exe" .
+) else (
+    echo Opening the browser workspace. Run setup.bat to install the desktop shell.
+    ".venv\Scripts\python.exe" -m drumscore.server --open
+)
 if errorlevel 1 pause

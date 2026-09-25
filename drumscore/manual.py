@@ -24,7 +24,16 @@ def append_line(project, frame, region, seconds):
     name = "manual_"+uuid.uuid4().hex[:10]+".png"
     path = project.directory / name
     Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)).save(path)
-    line = ScoreLine(name, seconds, 0)
+    source_name = "source_"+uuid.uuid4().hex[:10]+".png"
+    try:
+        Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)).save(project.directory / source_name)
+    except Exception:
+        path.unlink(missing_ok=True)
+        (project.directory / source_name).unlink(missing_ok=True)
+        raise
+    bounds = [region.left, region.top, region.right, region.bottom]
+    line = ScoreLine(name, seconds, 0, source_path=source_name, crop=bounds,
+                     original_path=name, original_crop=bounds.copy())
     previous_region = project.region
     project.lines.append(line)
     project.region = region
@@ -34,5 +43,6 @@ def append_line(project, frame, region, seconds):
         project.lines.pop()
         project.region = previous_region
         path.unlink(missing_ok=True)
+        (project.directory / source_name).unlink(missing_ok=True)
         raise
     return line

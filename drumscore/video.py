@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 from pathlib import Path
@@ -40,6 +43,9 @@ def youtube_url(value):
 
 
 def ffmpeg_path():
+    if getattr(sys, 'frozen', False):
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
     executable = shutil.which("ffmpeg")
     if executable:
         return executable
@@ -48,6 +54,17 @@ def ffmpeg_path():
         return imageio_ffmpeg.get_ffmpeg_exe()
     except ImportError as exc:
         raise RuntimeError("FFmpeg is missing. Run setup.bat to install dependencies.") from exc
+
+
+def audio_codec(path):
+    """Read stream headers without decoding the video or requiring ffprobe."""
+    result = subprocess.run([ffmpeg_path(), '-hide_banner', '-i', str(path)],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=20,
+                            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+    # FFmpeg exits with 1 when inspecting without an output; its stream headers are still valid.
+    match = re.search(r'Stream #\d+:\d+[^\r\n]*: Audio:\s*([^\s,]+)',
+                      result.stderr.decode('utf-8', errors='replace'))
+    return match.group(1).lower() if match else None
 
 
 def download(source, cache, progress=lambda *args: None, cancel=None):
@@ -75,21 +92,27 @@ def download(source, cache, progress=lambda *args: None, cancel=None):
             progress(message, None)
 
     options = {
-        "format": "bestvideo[height<=1080][vcodec^=avc]/bestvideo[height<=1080]/best[height<=1080]/best",
-        "outtmpl": str(cache / "%(id)s.%(ext)s"),
+        "format": ("bestvideo[height<=1080][vcodec^=avc]+bestaudio[ext=m4a]/"
+                   "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best/bestvideo[height<=1080]"),
+        # Keep audio-enabled downloads separate from older, silent cached videos.
+        "outtmpl": str(cache / "%(id)s-av.%(ext)s"),
+        "merge_output_format": "mp4",
         "noplaylist": True, "quiet": True, "logger": Logger(),
         "progress_hooks": [hook], "socket_timeout": 20,
         "retries": 2, "fragment_retries": 2, "windowsfilenames": True,
-        "ffmpeg_location": str(Path(ffmpeg_path()).parent),
+        "ffmpeg_location": str(ffmpeg_path()),
     }
     runtimes = {name: {} for name in ("deno", "node") if shutil.which(name)}
+    bundled_node = os.environ.get('DRUMSCORE_NODE')
+    if bundled_node and Path(bundled_node).is_file():
+        runtimes = {'node': {'path': bundled_node}}
     if runtimes:
         options["js_runtimes"] = runtimes
     check_cancel(cancel)
     progress("Connecting to YouTube…", 0)
     with yt_dlp.YoutubeDL(options) as ydl:
         info = ydl.extract_info(url, download=True)
-        path = Path(ydl.prepare_filename(info))
+        path = Path(info.get('filepath') or ydl.prepare_filename(info))
     check_cancel(cancel)
     if not path.is_file():
         raise RuntimeError("The video download did not produce a readable file.")

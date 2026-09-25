@@ -141,7 +141,7 @@ def difference(a, b):
     return score
 
 
-def split_systems(gray, padding=2):
+def split_systems(gray, padding=2, *, with_bounds=False):
     """Assign connected notation to each staff without slicing through symbols."""
     groups = staffs(gray)
     if not groups:
@@ -183,7 +183,8 @@ def split_systems(gray, padding=2):
         rows = np.flatnonzero(mask.any(axis=1))
         if len(rows):
             y0, y1 = max(0, rows[0]-padding), min(h, rows[-1]+padding+1)
-            result.append(np.where(mask[y0:y1], gray[y0:y1], 255).astype(np.uint8))
+            strip = np.where(mask[y0:y1], gray[y0:y1], 255).astype(np.uint8)
+            result.append((strip, (0, int(y0), w, int(y1))) if with_bounds else strip)
     return result
 
 

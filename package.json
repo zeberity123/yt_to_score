@@ -1,0 +1,36 @@
+{
+  "name": "drum-sheet-workspace",
+  "version": "0.3.0",
+  "private": true,
+  "description": "A local video-to-sheet-music PDF workspace with a shared web interface.",
+  "main": "desktop/main.cjs",
+  "author": "zeberity123",
+  "scripts": {
+    "start": "electron .",
+    "test:desktop": "node scripts/test-desktop.cjs",
+    "test:playback": "node scripts/test-playback.cjs",
+    "test:portable": "node scripts/test-portable.cjs",
+    "build:win": "node scripts/build-windows.cjs"
+  },
+  "devDependencies": {
+    "electron": "44.4.5",
+    "electron-builder": "26.15.3",
+    "playwright": "1.63.0"
+  },
+  "build": {
+    "appId": "com.zeberity123.videosheettopdf",
+    "productName": "Video Sheet to PDF",
+    "directories": {"output": "dist", "buildResources": "build/assets"},
+    "files": ["desktop/*.cjs", "package.json"],
+    "extraResources": [
+      {"from": "build/backend/score-backend", "to": "backend"},
+      {"from": "build/runtime", "to": "runtime"},
+      {"from": "build/licenses", "to": "licenses"},
+      {"from": "docs/THIRD_PARTY.md", "to": "THIRD_PARTY.md"}
+    ],
+    "win": {"target": [{"target": "portable", "arch": ["x64"]}], "icon": "build/assets/app.ico", "signExecutable": false},
+    "artifactName": "Video-Sheet-to-PDF-${version}-win-x64.exe",
+    "portable": {"requestExecutionLevel": "user"},
+    "publish": null
+  }
+}

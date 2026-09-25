@@ -14,6 +14,7 @@ from .extract import Extraction, ScoreLine, extract
 from .manual import append_line, new_manual_project
 from .pdf import export_pdf
 from .playback import VideoPlayer
+from .ui import WorkspaceUI
 from .video import Cancelled, download, metadata, preview
 from .vision import Region, auto_region, clean_score, split_systems
 
@@ -21,7 +22,7 @@ from .vision import Region, auto_region, clean_score, split_systems
 ROOT = Path(__file__).resolve().parent.parent
 
 
-class App(tk.Tk):
+class App(WorkspaceUI, tk.Tk):
     def __init__(self):
         if os.name == "nt":
             import ctypes
@@ -30,10 +31,9 @@ class App(tk.Tk):
             except (AttributeError, OSError):
                 pass
         super().__init__()
-        self.title("Drum Sheet Extractor")
-        self.geometry("1180x860")
-        self.minsize(960, 720)
-        self.configure(bg="#f3f5f8")
+        self.title("Video Sheet to PDF")
+        self.geometry("1240x860")
+        self.minsize(1080, 760)
         self.events = queue.Queue()
         self.cancel = threading.Event()
         self.busy = False
@@ -53,154 +53,28 @@ class App(tk.Tk):
         self.preview_photo = None
         self.line_photo = None
         self.source = tk.StringVar()
-        self.score_title = tk.StringVar(value="Drum score")
+        self.score_title = tk.StringVar(value="Sheet music")
         self.mode = tk.StringVar(value="auto")
         self.capture_mode = tk.StringVar(value="Automatic")
         self.last_capture_mode = "Automatic"
         self.speed = tk.StringVar(value="1x")
         self.manual_count = tk.StringVar(value="0 lines added")
-        self.time = tk.DoubleVar(value=20)
+        self.time = tk.DoubleVar(value=0)
         self.interval = tk.StringVar(value="0.5")
         self.threshold = tk.StringVar(value="0.035")
         self.start_time = tk.StringVar(value="0")
         self.end_time = tk.StringVar(value="")
         self.paper = tk.StringVar(value="A4")
-        self.gap = tk.StringVar(value="1.5")
+        self.gap = tk.StringVar(value="0")
+        self.left_margin = tk.StringVar(value="3")
+        self.right_margin = tk.StringVar(value="3")
         self.remove_overlap = tk.BooleanVar(value=True)
         self.status = tk.StringVar(value="Paste a YouTube link or choose a video, then click Load video.")
-        style = ttk.Style(self)
-        style.theme_use("clam")
-        style.configure("TFrame", background="#f3f5f8")
-        style.configure("TLabel", background="#f3f5f8", font=("Segoe UI", 10))
-        style.configure("TButton", font=("Segoe UI", 10), padding=(10, 6))
-        style.configure("Title.TLabel", font=("Segoe UI", 21, "bold"))
-        outer = ttk.Frame(self, padding=20)
-        outer.pack(fill="both", expand=True)
-        ttk.Label(outer, text="Drum Sheet Extractor", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(outer, text="Turn the notation already visible in a video into a compact, printable score.").pack(anchor="w", pady=(2, 14))
-        source_row = ttk.Frame(outer)
-        source_row.pack(fill="x")
-        ttk.Entry(source_row, textvariable=self.source).pack(side="left", fill="x", expand=True, padx=(0, 8))
-        self.action(source_row, "Choose file", self.choose_file).pack(side="left", padx=4)
-        self.action(source_row, "Load video", self.load_video).pack(side="left", padx=4)
-        self.action(source_row, "Open project", self.open_project).pack(side="left", padx=4)
-        title_row = ttk.Frame(outer)
-        title_row.pack(fill="x", pady=10)
-        ttk.Label(title_row, text="PDF title").pack(side="left", padx=(0, 10))
-        ttk.Entry(title_row, textvariable=self.score_title).pack(side="left", fill="x", expand=True)
-        self.tabs = ttk.Notebook(outer)
-        self.tabs.pack(fill="both", expand=True)
-        setup = ttk.Frame(self.tabs, padding=12)
-        review = ttk.Frame(self.tabs, padding=12)
-        self.tabs.add(setup, text="1  ·  Score area")
-        self.tabs.add(review, text="2  ·  Review & export")
-        self.tabs.bind("<<NotebookTabChanged>>", self.tab_changed)
-        setup.columnconfigure(0, weight=1)
-        setup.rowconfigure(3, weight=1)
-        mode_row = ttk.Frame(setup)
-        mode_row.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-        ttk.Label(mode_row, text="Capture mode").pack(side="left", padx=(0, 8))
-        for mode in ("Automatic", "Manual"):
-            ttk.Radiobutton(mode_row, text=mode, value=mode, variable=self.capture_mode,
-                            command=self.change_capture_mode).pack(side="left", padx=(0, 12))
-        row = self.layout_row = ttk.Frame(setup)
-        row.grid(row=1, column=0, sticky="ew")
-        ttk.Label(row, text="Layout").pack(side="left")
-        ttk.Combobox(row, textvariable=self.mode, values=["auto", "bottom", "page"], width=10, state="readonly").pack(side="left", padx=8)
-        self.action(row, "Detect score area", self.detect_region).pack(side="left")
-        ttk.Label(row, text="Drag a rectangle on the preview to set the crop.", wraplength=300).pack(side="left", padx=14)
-        extract_row = ttk.Frame(setup)
-        extract_row.grid(row=2, column=0, sticky="ew", pady=(8, 0))
-        self.overlap_check = ttk.Checkbutton(extract_row, text="Remove overlapping lines when pages scroll", variable=self.remove_overlap)
-        self.overlap_check.pack(side="left")
-        self.extract_button = self.action(extract_row, "Extract score lines", self.extract_video)
-        self.extract_button.pack(side="right")
-        self.count_label = ttk.Label(extract_row, textvariable=self.manual_count)
-        self.add_line_button = self.action(extract_row, "Add line", self.add_manual_line)
-        self.canvas = tk.Canvas(setup, background="#202630", highlightthickness=0, height=380)
-        self.canvas.grid(row=3, column=0, sticky="nsew", pady=10)
-        self.canvas.bind("<Configure>", lambda e: self.draw_preview())
-        self.canvas.bind("<ButtonPress-1>", self.crop_start)
-        self.canvas.bind("<B1-Motion>", self.crop_drag)
-        self.canvas.bind("<ButtonRelease-1>", self.crop_end)
-        self.drag_origin = None
-        seek_row = ttk.Frame(setup)
-        seek_row.grid(row=4, column=0, sticky="ew")
-        self.seek = ttk.Scale(seek_row, from_=0, to=300, variable=self.time)
-        self.seek.pack(side="left", fill="x", expand=True)
-        self.seek.bind("<ButtonPress-1>", self.begin_seek)
-        self.seek.bind("<ButtonRelease-1>", self.end_seek)
-        self.seek.bind("<KeyRelease>", lambda event: self.seek_video())
-        self.time_label = ttk.Label(seek_row, text="20.0 s", width=10)
-        self.time_label.pack(side="left", padx=8)
-        self.time.trace_add("write", lambda *_: self.time_label.configure(text=f"{self.time.get():.1f} s"))
-        self.action(seek_row, "Show frame", self.show_frame).pack(side="left")
-        self.add_view_button = self.action(seek_row, "Add this view", self.manual_capture)
-        self.add_view_button.pack(side="left", padx=(8, 0))
-        self.playback_row = ttk.Frame(setup)
-        self.playback_row.grid(row=5, column=0, sticky="ew", pady=(8, 0))
-        self.play_button = self.action(self.playback_row, "Play", self.toggle_playback)
-        self.play_button.pack(side="left", padx=(0, 12))
-        ttk.Label(self.playback_row, text="Speed").pack(side="left")
-        speed_control = ttk.Combobox(self.playback_row, textvariable=self.speed,
-                                    values=["0.5x", "1x", "1.5x", "2x"], width=6, state="readonly")
-        speed_control.pack(side="left", padx=8)
-        speed_control.bind("<<ComboboxSelected>>", lambda event: self.change_speed())
-        ttk.Label(self.playback_row, text="Drag one score line, then click Add line. Video preview has no audio.",
-                  wraplength=430).pack(side="left", padx=8)
-        self.playback_row.grid_remove()
-        options = self.auto_options = ttk.Frame(setup)
-        options.grid(row=6, column=0, sticky="ew", pady=(8, 0))
-        options.columnconfigure((0, 1), weight=1)
-        for i, (label, variable, width) in enumerate([
-            ("Sample every (s)", self.interval, 5), ("Change threshold", self.threshold, 6),
-            ("Start (s)", self.start_time, 6), ("End (s; blank = all)", self.end_time, 6),
-        ]):
-            field = ttk.Frame(options)
-            field.grid(row=i//2, column=i%2, sticky="w", pady=3)
-            ttk.Label(field, text=label).pack(side="left", padx=(0, 5))
-            ttk.Entry(field, textvariable=variable, width=width).pack(side="left", padx=(0, 16))
-        review_body = ttk.Frame(review)
-        review_body.pack(fill="both", expand=True)
-        list_frame = ttk.Frame(review_body)
-        list_frame.pack(side="left", fill="y", padx=(0, 14))
-        self.line_list = tk.Listbox(list_frame, width=35, font=("Segoe UI", 10), selectmode="extended",
-                                   exportselection=False, activestyle="none", selectbackground="#2468b4")
-        scroll = ttk.Scrollbar(list_frame, command=self.line_list.yview)
-        self.line_list.configure(yscrollcommand=scroll.set)
-        scroll.pack(side="right", fill="y")
-        self.line_list.pack(fill="both", expand=True)
-        self.line_list.bind("<<ListboxSelect>>", lambda e: self.show_line())
-        right = ttk.Frame(review_body)
-        right.pack(side="left", fill="both", expand=True)
-        self.line_canvas = tk.Canvas(right, background="white", highlightthickness=1, highlightbackground="#d8dfe8")
-        self.line_canvas.pack(fill="both", expand=True)
-        self.line_canvas.bind("<Configure>", lambda e: self.show_line())
-        buttons = ttk.Frame(right)
-        buttons.pack(fill="x", pady=10, side="bottom", before=self.line_canvas)
-        for text, command in [("Include / exclude", self.toggle_lines), ("Move up", lambda: self.move_line(-1)),
-                              ("Move down", lambda: self.move_line(1)), ("Save project", self.save_project)]:
-            self.action(buttons, text, command).pack(side="left", padx=(0, 6))
-        self.review_note = ttk.Label(right, text="Extracted lines appear here. Select a line to inspect it.", wraplength=650)
-        self.review_note.pack(fill="x", pady=6, side="bottom", before=self.line_canvas)
-        export_row = ttk.Frame(review)
-        export_row.pack(fill="x", pady=(15, 0), side="bottom", before=review_body)
-        ttk.Label(export_row, text="Paper").pack(side="left")
-        ttk.Combobox(export_row, textvariable=self.paper, values=["A4", "Letter"], width=8, state="readonly").pack(side="left", padx=8)
-        ttk.Label(export_row, text="Line gap (mm)").pack(side="left", padx=(10, 5))
-        ttk.Entry(export_row, textvariable=self.gap, width=5).pack(side="left")
-        self.action(export_row, "Export PDF…", self.export).pack(side="right")
-        bottom = ttk.Frame(outer)
-        bottom.pack(fill="x", pady=(12, 0), side="bottom", before=self.tabs)
-        self.progress = ttk.Progressbar(bottom, maximum=1)
-        self.progress.pack(side="left", fill="x", expand=True, padx=(0, 12))
-        ttk.Button(bottom, text="Cancel", command=self.cancel.set).pack(side="right")
-        ttk.Label(outer, textvariable=self.status, wraplength=1100).pack(
-            fill="x", pady=(8, 0), side="bottom", before=self.tabs)
+        self.build_ui()
         self.after(100, self.poll)
         self.protocol("WM_DELETE_WINDOW", self.close)
 
-    def action(self, parent, label, callback):
+    def action(self, parent, label, callback, primary=False):
         def guarded():
             if self.busy:
                 self.status.set("Please wait for the current operation, or click Cancel.")
@@ -208,13 +82,16 @@ class App(tk.Tk):
             try:
                 callback()
             except Exception as exc:
-                messagebox.showerror("Drum Sheet Extractor", str(exc))
-        return ttk.Button(parent, text=label, command=guarded)
+                messagebox.showerror("Video Sheet to PDF", str(exc))
+        return ttk.Button(parent, text=label, command=guarded,
+                          style="Primary.TButton" if primary else "TButton")
 
     def worker(self, task, callback):
         self.pause_playback()
         self.busy = True
         self.cancel.clear()
+        self.status.set("Working…")
+        self.sync_controls()
         self.progress["value"] = 0
         def run():
             try:
@@ -237,18 +114,21 @@ class App(tk.Tk):
                         self.progress["value"] = b
                 elif event == "done":
                     self.busy = False
+                    self.progress["value"] = 1
                     try:
                         a(b)
                     except Exception as exc:
-                        messagebox.showerror("Drum Sheet Extractor", str(exc))
+                        messagebox.showerror("Video Sheet to PDF", str(exc))
                 else:
                     self.busy = False
+                    self.progress["value"] = 0
                     self.status.set("Cancelled." if b else a)
                     if not b:
                         messagebox.showerror("Could not complete operation", a)
         except queue.Empty:
             pass
         self.consume_playback()
+        self.sync_controls()
         self.after(33, self.poll)
 
     def change_capture_mode(self):
@@ -264,6 +144,7 @@ class App(tk.Tk):
         for widget in (self.overlap_check, self.extract_button, self.add_view_button):
             widget.pack_forget()
         if manual:
+            self.mode_hint.configure(text="Drag around one score line. Play the video and click Add line to capture it.")
             self.count_label.pack(side="left")
             self.add_line_button.pack(side="right")
             self.playback_row.grid()
@@ -273,6 +154,7 @@ class App(tk.Tk):
                 self.seek_video()
             self.status.set("Manual mode: drag a rectangle around one line, press Play, and click Add line whenever you want to capture it.")
         else:
+            self.mode_hint.configure(text="Drag on the preview to set the crop, then extract your score.")
             self.count_label.pack_forget()
             self.add_line_button.pack_forget()
             self.playback_row.grid_remove()
@@ -404,6 +286,8 @@ class App(tk.Tk):
 
     def draw_preview(self):
         if self.frame is None:
+            self.empty_canvas(self.canvas, "Start with a video",
+                              "Paste a YouTube link or choose a local file above.\nYour score preview will appear here.", dark=True)
             return
         image = Image.fromarray(cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB))
         cw, ch = max(1, self.canvas.winfo_width()), max(1, self.canvas.winfo_height())
@@ -467,23 +351,31 @@ class App(tk.Tk):
             for i, line in enumerate(self.project.lines):
                 origin = f"view {line.view}" if line.view else "manual"
                 self.line_list.insert("end", f"{'✓' if line.included else '—'}  {i+1:03d}   ·   {line.time//60:.0f}:{line.time%60:04.1f}   ·   {origin}")
+                self.line_list.itemconfigure(i, background="#f2f6f7" if i % 2 == 0 else "white",
+                                             foreground="#182f3a" if line.included else "#87979f")
             if self.project.warnings:
                 self.review_note.configure(text="\n".join(self.project.warnings))
             if self.project.lines:
                 self.line_list.selection_set(min(selection, len(self.project.lines)-1))
+        lines = self.project.lines if self.project else []
+        included = sum(line.included for line in lines)
+        self.line_summary.configure(text=f"{len(lines)} lines · {included} included" if lines else "No lines yet")
         self.show_line()
 
     def show_line(self):
         self.line_canvas.delete("all")
         selected = self.line_list.curselection()
         if not selected or not self.project:
+            self.empty_canvas(self.line_canvas, "Your score starts here",
+                              "Capture lines in Score area or open a saved project.\nSelect a line to inspect it before exporting.")
             return
         line = self.project.lines[selected[0]]
         with Image.open(self.project.directory/line.path) as original:
             image = original.convert("RGB")
         image.thumbnail((max(1, self.line_canvas.winfo_width()-20), max(1, self.line_canvas.winfo_height()-20)), Image.Resampling.LANCZOS)
         self.line_photo = ImageTk.PhotoImage(image)
-        self.line_canvas.create_image(10, 10, anchor="nw", image=self.line_photo)
+        self.line_canvas.create_image(self.line_canvas.winfo_width()/2,
+                                      self.line_canvas.winfo_height()/2, image=self.line_photo)
 
     def toggle_lines(self):
         selected = self.line_list.curselection()
@@ -558,7 +450,9 @@ class App(tk.Tk):
             self.score_title.set(self.project.title)
             self.video = None
             self.frame = None
-            self.canvas.delete("all")
+            self.video_duration = 0
+            self.time.set(0)
+            self.draw_preview()
             self.refresh_lines()
             self.tabs.select(1)
             self.status.set("Saved project opened. Review and export when ready.")
@@ -568,17 +462,19 @@ class App(tk.Tk):
             raise ValueError("Add lines in Manual mode, extract a video, or open a saved project first.")
         self.pause_playback()
         import re
-        name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", self.score_title.get())[:100].strip(". ") or "drum-score"
+        name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", self.score_title.get())[:100].strip(". ") or "sheet-music"
         filename = filedialog.asksaveasfilename(initialdir=ROOT/"output", initialfile=name+".pdf", defaultextension=".pdf", filetypes=[("PDF", "*.pdf")])
         if filename:
             self.project.title = self.score_title.get()
             self.project.save()
             project, paper, gap = self.project, self.paper.get(), float(self.gap.get())
+            left_margin, right_margin = float(self.left_margin.get()), float(self.right_margin.get())
             def done(pages):
                 self.status.set(f"Saved {pages} pages: {filename}")
                 if hasattr(os, "startfile"):
                     os.startfile(filename)
-            self.worker(lambda: export_pdf(project, filename, paper=paper, gap_mm=gap), done)
+            self.worker(lambda: export_pdf(project, filename, paper=paper, gap_mm=gap,
+                                          left_margin_mm=left_margin, right_margin_mm=right_margin), done)
 
     def close(self):
         self.cancel.set()

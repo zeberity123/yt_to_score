@@ -9,3 +9,10 @@ video-info.json
 .env
 .env.*
 !.env.example
+node_modules/
+.npm-cache/
+.electron-cache/
+build/
+dist/
+.builder-cache/
+*.spec

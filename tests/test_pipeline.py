@@ -7,7 +7,7 @@ from PIL import Image
 import pymupdf
 import pytest
 
-from drumscore.extract import Extraction, extract
+from drumscore.extract import Extraction, ScoreLine, extract
 from drumscore.pdf import export_pdf
 from drumscore.video import Cancelled, frames, youtube_url
 from drumscore.vision import Region, auto_region, clean_score, difference, signature, split_systems, staffs
@@ -159,3 +159,53 @@ def test_invalid_crop_and_empty_export(tmp_path):
     project = Extraction(tmp_path, 'Empty', '', Region(), [], [])
     with pytest.raises(ValueError, match='at least one'):
         export_pdf(project, tmp_path/'empty.pdf')
+
+
+@pytest.mark.parametrize('paper, dimensions_mm', [
+    ('A4', (210, 297)), ('A3', (297, 420)), ('A5', (148, 210)),
+    ('B4', (250, 353)), ('B5', (176, 250)), ('Letter', (215.9, 279.4)),
+    ('Legal', (215.9, 355.6)), ('Tabloid', (279.4, 431.8)),
+])
+def test_export_paper_dimensions(tmp_path, paper, dimensions_mm):
+    Image.fromarray(score()).save(tmp_path/'line.png')
+    project = Extraction(tmp_path, 'Sheet music', '', Region(), [ScoreLine('line.png', 0, 1)], [])
+    destination = tmp_path/'score.pdf'
+    export_pdf(project, destination, paper=paper)
+    with pymupdf.open(destination) as pdf:
+        assert (pdf[0].rect.width, pdf[0].rect.height) == pytest.approx(
+            tuple(mm*72/25.4 for mm in dimensions_mm), abs=.01)
+        assert len(pdf[0].get_image_info()) == 1
+        assert pdf.metadata['author'] == 'Video Sheet to PDF'
+
+
+def test_export_rejects_unknown_paper_size(tmp_path):
+    project = Extraction(tmp_path, 'Sheet music', '', Region(), [ScoreLine('line.png', 0, 1)], [])
+    with pytest.raises(ValueError, match='Unsupported paper size'):
+        export_pdf(project, tmp_path/'score.pdf', paper='Unknown')
+    assert not (tmp_path/'score.pdf').exists()
+
+
+@pytest.mark.parametrize('paper', ['A4', 'Letter'])
+@pytest.mark.parametrize('margins', [{}, {'left_margin_mm': 0, 'right_margin_mm': 0},
+                                  {'left_margin_mm': 3, 'right_margin_mm': 18}])
+def test_pdf_side_margins_across_pages(tmp_path, paper, margins):
+    Image.fromarray(score()).save(tmp_path/'line.png')
+    project = Extraction(tmp_path, 'Margin check', '', Region(),
+                         [ScoreLine('line.png', i, i) for i in range(12)], [])
+    destination = tmp_path/'margins.pdf'
+    export_pdf(project, destination, paper=paper, **margins)
+    left = margins.get('left_margin_mm', 3)*72/25.4
+    right = margins.get('right_margin_mm', 3)*72/25.4
+    with pymupdf.open(destination) as pdf:
+        assert len(pdf) > 1
+        assert sum(len(page.get_image_info()) for page in pdf) == 12
+        for page in pdf:
+            for info in page.get_image_info():
+                x0, y0, x1, y1 = info['bbox']
+                assert x0 == pytest.approx(left, abs=.01)
+                assert x1 == pytest.approx(page.rect.width-right, abs=.01)
+                assert (y1-y0)/(x1-x0) == pytest.approx(210/800, abs=.001)
+                assert y0 >= 12*72/25.4-.01
+                assert y1 <= page.rect.height-12*72/25.4+.01
+        title = next(block for block in pdf[0].get_text('blocks') if 'Margin check' in block[4])
+        assert title[0] == pytest.approx(left, abs=.01)

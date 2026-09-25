@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-src 'none'">
+  <meta name="theme-color" content="#f5f4f0">
+  <title>Video Sheet to PDF</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand"><img src="icon.svg" alt=""><div>Video Sheet to PDF</div></div>
+    <nav class="tabs" aria-label="Workspace"><button id="capture-tab" class="active" aria-selected="true">01 <span>Capture</span></button><button id="review-tab" aria-selected="false">02 <span>Review & export</span><b id="tab-count">0</b></button></nav>
+    <button id="open-project" class="subtle">Open project <span aria-hidden="true">↗</span></button>
+  </header>
+  <main>
+    <section id="capture-screen" class="capture-layout" aria-label="Capture workspace">
+      <aside class="capture-sidebar">
+        <section class="control-section"><div class="section-heading"><h2>Video source</h2><span class="step-dot">1</span></div>
+          <label class="sr-only" for="source">YouTube link or local video path</label><input id="source" type="text" placeholder="Paste a YouTube link…" autocomplete="off">
+          <div class="button-row"><button id="choose-video">Choose file</button><button id="load-video" class="primary">Load video <span aria-hidden="true">↗</span></button></div>
+          <p id="source-note" class="help">YouTube · MP4 · MOV · MKV · WebM · AVI</p>
+        </section>
+        <section class="control-section"><div class="section-heading"><h2>Capture settings</h2><span class="step-dot">2</span></div>
+          <div class="segmented" aria-label="Capture mode"><button id="automatic" aria-pressed="true">Automatic</button><button id="manual" aria-pressed="false">Manual</button></div>
+          <div id="auto-controls">
+            <label class="field-label" for="layout">Score layout</label><div class="button-row"><select id="layout"><option value="auto">Auto detect</option><option value="bottom">Bottom strip</option><option value="page">Full page</option></select><button id="detect" title="Detect the score crop in this frame">Detect area</button></div>
+            <details id="advanced"><summary>Extraction settings <span>+</span></summary><div class="field-grid"><label>Sample every (s)<input id="interval" type="number" value="0.5" min="0.05" step="0.05"></label><label>Change threshold<input id="threshold" type="number" value="0.035" min="0.001" max="0.99" step="0.005"></label><label>Start (s)<input id="start" type="number" value="0" min="0"></label><label>End (s)<input id="end" type="number" placeholder="Whole video" min="0"></label></div></details>
+            <button id="extract" class="primary full">Extract score lines <span aria-hidden="true">→</span></button>
+          </div>
+          <div id="manual-controls" hidden><button id="add-line" class="primary full">+ Add line <span id="manual-count">0</span></button><button id="review-lines" class="text-button full">Review captured lines →</button></div>
+        </section>
+        <section class="control-section last" aria-label="Playback">
+          <div class="section-heading"><h2>Playback</h2><span class="step-dot">3</span></div>
+          <div class="button-row"><button id="play">▶ Play</button><select id="speed" aria-label="Playback speed"><option value="0.5">0.5× speed</option><option value="1" selected>1× speed</option><option value="1.5">1.5× speed</option><option value="2">2× speed</option><option value="2.5">2.5× speed</option><option value="3">3× speed</option></select></div>
+          <div class="volume-heading"><label for="volume">Volume</label><output id="volume-value" for="volume">70%</output></div>
+          <div class="volume-controls"><button id="mute" aria-pressed="false" aria-label="Mute audio">Mute</button><input id="volume" type="range" min="0" max="100" step="1" value="70" aria-label="Volume"></div>
+          <p id="audio-note" class="help" hidden>No audio track in this file.</p>
+          <label class="check-row"><input type="checkbox" id="keep-review-audio"><span>Audio in Review & export</span></label>
+        </section>
+      </aside>
+      <div class="video-workspace">
+        <div id="video-stage" class="video-stage">
+          <div id="video-empty" class="empty-state"><div class="staff-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><b>♪</b></div><h2>Load a video</h2><p>Paste a YouTube link or choose a file.<br>Then draw around the sheet music to capture.</p></div>
+          <div id="video-fit" class="media-fit" hidden><video id="video" playsinline preload="metadata"></video><div id="video-crop" class="crop-overlay" aria-label="Drag to select score area"><div class="crop-box"><span class="crop-label">SCORE AREA</span><i data-handle="nw"></i><i data-handle="ne"></i><i data-handle="sw"></i><i data-handle="se"></i></div></div></div>
+        </div>
+        <div class="timeline"><output id="current-time">00:00.0</output><input type="range" id="seek" min="0" max="1" step="0.01" value="0" aria-label="Video timeline"><output id="duration">00:00</output></div>
+      </div>
+    </section>
+    <section id="review-screen" class="review-layout" aria-label="Review and export workspace" hidden>
+      <aside class="line-sidebar"><div class="section-heading"><h2>Score lines <span id="line-count">0</span></h2><button id="back-capture" class="icon-button" aria-label="Return to capture">+</button></div><p id="included-count" class="help">Capture a line to get started.</p><div id="line-list" class="line-list" aria-label="Score lines"></div></aside>
+      <div class="review-main">
+        <div class="review-heading"><h1 id="preview-title">Line preview</h1><button id="edit-line">Edit crop <span aria-hidden="true">⌗</span></button></div>
+        <div id="line-stage" class="line-stage"><div id="line-empty" class="empty-state"><div class="staff-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><b>♪</b></div><h2>No score lines yet</h2><p>Capture lines or open a saved project.<br>Select a line to inspect, crop, or expand it.</p></div><img id="line-image" alt="Selected score line" hidden></div>
+        <div class="line-actions"><div class="button-row"><button id="include-line">Exclude line</button><button id="move-up" aria-label="Move selected line up">↑ Move up</button><button id="move-down" aria-label="Move selected line down">↓ Move down</button></div><span id="line-meta" class="help">Exported in the order shown on the left.</span></div>
+        <details id="warnings" hidden><summary>Extraction notes</summary><ul id="warning-list"></ul></details>
+        <div class="review-playback" aria-label="Review audio">
+          <label class="check-row"><input type="checkbox" id="review-audio"><span>Audio in review</span></label>
+          <button id="review-play">▶ Play</button><select id="review-speed" aria-label="Review playback speed"></select>
+        </div>
+        <section class="export-card" aria-label="PDF settings">
+          <label class="field-label" for="pdf-title">PDF & project title</label><input id="pdf-title" value="Sheet music">
+          <div class="export-bottom">
+            <div class="pdf-fields">
+              <label>Paper<select id="paper">
+                <option value="A4" title="210 × 297 mm">A4</option>
+                <option value="A3" title="297 × 420 mm">A3</option>
+                <option value="A5" title="148 × 210 mm">A5</option>
+                <option value="B4" title="250 × 353 mm">B4 (ISO)</option>
+                <option value="B5" title="176 × 250 mm">B5 (ISO)</option>
+                <option value="Letter" title="8.5 × 11 in">Letter</option>
+                <option value="Legal" title="8.5 × 14 in">Legal</option>
+                <option value="Tabloid" title="11 × 17 in">Tabloid</option>
+              </select></label>
+              <label>Line gap <small>mm</small><input id="gap" type="number" value="0" min="0" max="30" step="0.5"></label>
+              <label>Left <small>mm</small><input id="left-margin" type="number" value="3" min="0" max="40" step="0.1"></label>
+              <label>Right <small>mm</small><input id="right-margin" type="number" value="3" min="0" max="40" step="0.1"></label>
+              <button id="for-print" title="Set line gap to 0 mm and left/right margins to 12 mm">For print</button>
+            </div>
+            <div class="export-actions"><button id="save-project">Save project <span aria-hidden="true">↗</span></button><button id="export-pdf" class="primary">Export PDF <span aria-hidden="true">↓</span></button></div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+  <footer class="status-bar"><span id="status-dot" class="status-dot"></span><span id="status" role="status">Connecting to your workspace…</span><progress id="progress" max="1" value="0" hidden></progress><button id="cancel" class="text-button" hidden>Cancel</button></footer>
+  <div id="error" class="error-toast" role="alert" hidden><span id="error-text"></span><button id="dismiss-error" aria-label="Dismiss error">×</button></div>
+  <dialog id="editor" aria-labelledby="editor-title"><div class="dialog-header"><div><h2 id="editor-title">Edit line crop</h2></div><button id="close-editor" class="icon-button" aria-label="Close crop editor">×</button></div><p id="editor-hint" class="help">Drag the corners to crop or expand into the original frame. Drag inside to move the selection.</p><div id="editor-stage" class="editor-stage"><div id="editor-fit" class="media-fit"><img id="editor-image" alt="Original capture with editable crop"><div id="editor-crop" class="crop-overlay"><div class="crop-box"><i data-handle="nw"></i><i data-handle="ne"></i><i data-handle="sw"></i><i data-handle="se"></i></div></div></div></div><div class="crop-fields"><label>Left <small>%</small><input id="crop-left" type="number" min="0" max="100" step="0.1"></label><label>Top <small>%</small><input id="crop-top" type="number" min="0" max="100" step="0.1"></label><label>Right <small>%</small><input id="crop-right" type="number" min="0" max="100" step="0.1"></label><label>Bottom <small>%</small><input id="crop-bottom" type="number" min="0" max="100" step="0.1"></label></div><div class="dialog-actions"><button id="reset-line">Restore original</button><div class="button-row"><button id="cancel-edit">Cancel</button><button id="apply-edit" class="primary">Apply crop →</button></div></div></dialog>
+  <input id="video-file" type="file" accept="video/*,.mkv,.avi" hidden><input id="project-file" type="file" accept=".drumscore" hidden>
+</body>
+</html>

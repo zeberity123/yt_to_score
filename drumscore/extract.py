@@ -17,6 +17,10 @@ class ScoreLine:
     time: float
     view: int
     included: bool = True
+    source_path: str | None = None
+    crop: list[float] | None = None
+    original_path: str | None = None
+    original_crop: list[float] | None = None
 
 
 @dataclass
@@ -46,7 +50,7 @@ class Extraction:
                    [ScoreLine(**line) for line in data["lines"]], data.get("warnings", []))
 
 
-def extract(path, destination, title="Drum score", source="", region=None, mode="auto",
+def extract(path, destination, title="Sheet music", source="", region=None, mode="auto",
             interval=.5, threshold=.035, start=0, end=None, progress=lambda *args: None, cancel=None,
             remove_overlap=True):
     _, _, duration = metadata(path)
@@ -85,7 +89,8 @@ def extract(path, destination, title="Drum score", source="", region=None, mode=
             rejected += 1
             current = None
             return
-        strips = split_systems(image)
+        segments = split_systems(image, with_bounds=True)
+        strips = [strip for strip, bounds in segments]
         if strips:
             view_number += 1
             systems = [system_signature(strip) for strip in strips]
@@ -102,10 +107,18 @@ def extract(path, destination, title="Drum score", source="", region=None, mode=
                     overlap = 1
             overlap_count += overlap
             previous_systems = systems
-            for strip in strips[overlap:]:
+            context_name = f"source_{view_number:04d}.png"
+            Image.fromarray(clean_score(current["frame"])).save(directory / context_name)
+            fh, fw = current["frame"].shape[:2]
+            rx, ry = int(region.left*fw), int(region.top*fh)
+            for strip, bounds in segments[overlap:]:
                 name = f"line_{len(project.lines)+1:04d}.png"
                 Image.fromarray(strip).save(directory / name)
-                project.lines.append(ScoreLine(name, current["time"], view_number))
+                x0, y0, x1, y1 = bounds
+                crop = [(rx+x0)/fw, (ry+y0)/fh, (rx+x1)/fw, (ry+y1)/fh]
+                project.lines.append(ScoreLine(name, current["time"], view_number,
+                                              source_path=context_name, crop=crop,
+                                              original_path=name, original_crop=crop.copy()))
         current = None
 
     iterator = frames(path, interval, start, end, cancel)
@@ -126,7 +139,8 @@ def extract(path, destination, title="Drum score", source="", region=None, mode=
             else:
                 flush()
                 if staffs(gray):
-                    current = {"signature": sig, "samples": [gray.copy()], "count": 1, "time": t}
+                    current = {"signature": sig, "samples": [gray.copy()], "count": 1, "time": t,
+                               "frame": frame.copy()}
             progress(f"Scanning {t:.1f}s / {end:.1f}s · {len(project.lines)} lines", (t-start)/(end-start))
         flush()
     finally:
