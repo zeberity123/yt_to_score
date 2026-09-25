@@ -185,6 +185,17 @@ def test_export_rejects_unknown_paper_size(tmp_path):
     assert not (tmp_path/'score.pdf').exists()
 
 
+@pytest.mark.skipif(not Path('C:/Windows/Fonts/meiryo.ttc').exists(), reason='Windows CJK font coverage')
+def test_pdf_title_preserves_mixed_korean_and_japanese(tmp_path):
+    title = '기타 ギター 楽譜'
+    Image.fromarray(score()).save(tmp_path/'line.png')
+    project = Extraction(tmp_path, title, '', Region(), [ScoreLine('line.png', 0, 1)], [])
+    export_pdf(project,tmp_path/'cjk.pdf')
+    with pymupdf.open(tmp_path/'cjk.pdf') as pdf:
+        assert title in pdf[0].get_text()
+        assert pdf.metadata['title'] == title
+
+
 @pytest.mark.parametrize('paper', ['A4', 'Letter'])
 @pytest.mark.parametrize('margins', [{}, {'left_margin_mm': 0, 'right_margin_mm': 0},
                                   {'left_margin_mm': 3, 'right_margin_mm': 18}])

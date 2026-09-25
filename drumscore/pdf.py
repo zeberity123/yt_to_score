@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import tempfile
+from functools import lru_cache
 
 from PIL import Image
 from reportlab.lib.pagesizes import A3, A4, A5, B4, B5, LETTER, LEGAL, TABLOID
@@ -32,6 +33,21 @@ def title_font():
     return "Helvetica"
 
 
+@lru_cache(maxsize=1)
+def title_fallbacks():
+    fonts = [title_font()]
+    for index, name in enumerate(('meiryo.ttc', 'YuGothM.ttc')):
+        path = Path(os.environ.get('WINDIR', 'C:/Windows'))/'Fonts'/name
+        if path.exists():
+            try:
+                font = f'ScoreTitleFallback{index}'
+                pdfmetrics.registerFont(TTFont(font, str(path)))
+                fonts.append(font)
+            except Exception:
+                continue
+    return fonts
+
+
 def export_pdf(project, filename, paper="A4", gap_mm=0, margin_mm=12, title=None,
                *, left_margin_mm=3, right_margin_mm=3):
     included = [line for line in project.lines if line.included]
@@ -61,20 +77,34 @@ def export_pdf(project, filename, paper="A4", gap_mm=0, margin_mm=12, title=None
         canvas.setTitle(title)
         canvas.setAuthor("Video Sheet to PDF")
         font = title_font()
+        def character_font(char):
+            if ord(char) < 128:
+                return font
+            for candidate in title_fallbacks():
+                if ord(char) in getattr(pdfmetrics.getFont(candidate).face, 'charToGlyph', {}):
+                    return candidate
+            return font
 
         def header():
             canvas.setFont(font, 12)
             # Wrap long video titles instead of letting them run off the page.
-            rows, row = [], ""
+            rows, row, row_width = [], "", 0
             for char in title:
-                if pdfmetrics.stringWidth(row+char, font, 12) > available_width:
+                char_width = pdfmetrics.stringWidth(char, character_font(char), 12)
+                if row_width+char_width > available_width:
                     rows.append(row)
                     row = ""
+                    row_width = 0
                 row += char
+                row_width += char_width
             if row:
                 rows.append(row)
             for i, row in enumerate(rows[:3]):
-                canvas.drawString(left_margin, height-margin-12-i*15, row)
+                text = canvas.beginText(left_margin, height-margin-12-i*15)
+                for char in row:
+                    text.setFont(character_font(char), 12)
+                    text.textOut(char)
+                canvas.drawText(text)
             return height-margin-max(1, len(rows[:3]))*15-10
 
         def footer():

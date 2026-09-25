@@ -1,5 +1,6 @@
 import {WorkspaceAPI} from './api.js';
 import {CropSelection, fitMedia} from './crop.js';
+import './i18n.js';
 
 const $ = id => document.getElementById(id);
 const api = new WorkspaceAPI();
@@ -162,7 +163,7 @@ function updateControls() {
     'undo-line':!!state?.canUndo,
     'move-down':!!line && selected<state.lines.length-1,
     'save-project':!!state?.lines.length, 'export-pdf':!!state?.lines.some(l => l.included),
-    'for-print':true,
+    'for-print':true, notation:true,
   };
   for (const [id, enabled] of Object.entries(conditions)) $(id).disabled = locked || !enabled;
   $('seek').disabled = locked || !loaded;
@@ -188,7 +189,7 @@ async function upload(file, kind) {
 }
 async function loadVideo() {
   video.pause(); job = 'load'; titleDirty = false;
-  await command('load', {source:$('source').value, layout:$('layout').value});
+  await command('load', {source:$('source').value, layout:$('layout').value, notation:$('notation').value});
 }
 listen('capture-tab','click', () => switchTab('capture'));
 listen('review-tab','click', () => switchTab('review'));
@@ -208,11 +209,12 @@ for (const mode of ['automatic','manual']) listen(mode,'click', async () => {
   if (mode === 'manual') setReviewAudio(true);
   if (mode === 'manual' && !state.lines.length && state.video) video.currentTime = 0;
 });
-listen('detect','click', () => { video.pause(); return command('detect', {time:video.currentTime, layout:$('layout').value}); });
+listen('detect','click', () => { video.pause(); return command('detect', {time:video.currentTime, layout:$('layout').value, notation:$('notation').value}); });
+listen('notation','change', () => { if (state?.video) { video.pause(); return command('detect', {time:video.currentTime, layout:$('layout').value, notation:$('notation').value}); } });
 listen('extract','click', async () => {
   video.pause(); setReviewAudio(false); job = 'extract';
   await command('extract', {interval:$('interval').value, threshold:$('threshold').value, start:$('start').value,
-    end:$('end').value, overlap:true});
+    end:$('end').value, overlap:true, notation:$('notation').value});
 });
 listen('cancel','click', () => command('cancel'));
 listen('play','click', togglePlayback);

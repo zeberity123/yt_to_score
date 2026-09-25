@@ -165,7 +165,7 @@ class Workspace:
                     _, _, duration = metadata(path)
                     sound_codec = audio_codec(path)
                     media = self.browser_media(path, sound_codec)
-                    region = auto_region(preview(path, 0 if mode == 'manual' else min(20, duration*.1)), data.get('layout', 'auto'))
+                    region = auto_region(preview(path, 0 if mode == 'manual' else min(20, duration*.1)), data.get('layout', 'auto'), data.get('notation', 'staff'))
                     check_cancel(self.cancel)
                     with self.lock:
                         self.video, self.media, self.source = path, media, source
@@ -189,7 +189,7 @@ class Workspace:
                 self.region = Region(*data['crop'])
             elif action == 'detect':
                 self.require_video()
-                self.region = auto_region(preview(self.video, float(data['time'])), data.get('layout', 'auto'))
+                self.region = auto_region(preview(self.video, float(data['time'])), data.get('layout', 'auto'), data.get('notation', 'staff'))
             elif action == 'extract':
                 self.require_video()
                 region = self.region
@@ -197,7 +197,8 @@ class Workspace:
                     project = extract(self.video, self.output, self.title, self.source, region,
                                       interval=float(data.get('interval', .5)), threshold=float(data.get('threshold', .035)),
                                       start=float(data.get('start', 0)), end=float(data['end']) if data.get('end') not in ('', None) else None,
-                                      remove_overlap=bool(data.get('overlap', True)), progress=self.report, cancel=self.cancel)
+                                      remove_overlap=bool(data.get('overlap', True)), progress=self.report, cancel=self.cancel,
+                                      notation=data.get('notation', 'staff'))
                     with self.lock:
                         self.projects['automatic'] = project
                         self.removed['automatic'] = []

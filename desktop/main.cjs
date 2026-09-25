@@ -13,6 +13,10 @@ if (profile || app.isPackaged) {
   app.setPath('userData', userData);
 }
 let backend, window, origin, exportSession;
+const preferencesPath = path.join(app.getPath('userData'), 'preferences.json');
+let preferences = {};
+try { preferences = JSON.parse(fs.readFileSync(preferencesPath, 'utf8')); } catch {}
+if (!['en','ko','ja'].includes(preferences.language)) preferences.language = 'en';
 function cleanExportSession() {
   if (!exportSession) return;
   const target = path.resolve(exportSession.path);
@@ -75,9 +79,22 @@ async function start() {
       });
     }
   });
-  ipcMain.handle('choose-file', async (event,kind) => {
+  function checkCaller(event) {
     if (event.sender !== window?.webContents || event.senderFrame !== event.sender.mainFrame || new URL(event.senderFrame.url).origin !== origin) throw new Error('Invalid caller.');
-    const filters = kind === 'project' ? [{name:'Sheet music project',extensions:['drumscore','json']}] : [{name:'Videos',extensions:['mp4','mkv','webm','mov','avi']}];
+  }
+  ipcMain.handle('get-language', event => { checkCaller(event); return preferences.language; });
+  ipcMain.handle('set-language', (event,language) => {
+    checkCaller(event);
+    if (!['en','ko','ja'].includes(language)) throw new Error('Invalid language.');
+    const next = {...preferences, language};
+    const temporary = preferencesPath + '.tmp';
+    try { fs.writeFileSync(temporary, JSON.stringify(next), 'utf8'); fs.renameSync(temporary, preferencesPath); preferences = next; }
+    finally { fs.rmSync(temporary, {force:true}); }
+  });
+  ipcMain.handle('choose-file', async (event,kind) => {
+    checkCaller(event);
+    const names = {en:['Sheet music project','Videos'],ko:['악보 프로젝트','동영상'],ja:['楽譜プロジェクト','動画']}[preferences.language];
+    const filters = kind === 'project' ? [{name:names[0],extensions:['drumscore','json']}] : [{name:names[1],extensions:['mp4','mkv','webm','mov','avi']}];
     const result = await dialog.showOpenDialog(window,{properties:['openFile'], filters});
     return result.canceled ? null : result.filePaths[0];
   });

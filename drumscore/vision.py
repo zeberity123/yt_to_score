@@ -47,41 +47,90 @@ def runs(indices):
     return np.split(indices, np.where(np.diff(indices) > 1)[0]+1)
 
 
-def _staffs_at(gray, threshold):
-    """Find groups of five long, equally spaced horizontal staff rules."""
+def _staffs_at(gray, threshold, rules=5):
+    """Find long, equally spaced staff or six-string TAB rules."""
     h, w = gray.shape
     if w < 50 or h < 15:
         return []
     ink = (gray < threshold).astype(np.uint8)
+    if rules == 6:
+        # Fret digits interrupt the string rules, unlike ordinary noteheads.
+        ink = cv2.morphologyEx(ink, cv2.MORPH_CLOSE, np.ones((1, max(5, w//160)), np.uint8))
     horizontal = cv2.morphologyEx(ink, cv2.MORPH_OPEN,
-                                 np.ones((1, max(20, w//7)), np.uint8))
+                                 np.ones((1, max(20, w//50 if rules == 6 else w//7)), np.uint8))
     centers = [int(np.round(r.mean())) for r in runs(np.flatnonzero(horizontal.sum(axis=1) > w*.30))]
     found = []
     i = 0
-    while i+4 < len(centers):
-        lines = centers[i:i+5]
+    while i+rules-1 < len(centers):
+        if rules == 6:
+            # Additional beam/bend rows must not break an otherwise regular grid.
+            match = None
+            for last in centers[i+5:]:
+                spacing = (last-centers[i])/5
+                if not 3 <= spacing <= min(35, h/8):
+                    continue
+                targets = [min(centers, key=lambda y: abs(y-(centers[i]+n*spacing))) for n in range(6)]
+                if all(abs(y-(centers[i]+n*spacing)) <= max(1.5, spacing*.12) for n,y in enumerate(targets)):
+                    match = targets
+                    break
+            if match:
+                found.append((match[0], match[-1], (match[-1]-match[0])/5))
+                i = centers.index(match[-1])+1
+            else:
+                i += 1
+            continue
+        lines = centers[i:i+rules]
         gaps = np.diff(lines)
         spacing = float(np.median(gaps))
         if 2 <= spacing <= min(35, h/8) and np.max(np.abs(gaps-spacing)) <= max(1.5, spacing*.22):
             found.append((lines[0], lines[-1], spacing))
-            i += 5
+            i += rules
         else:
             i += 1
     return found
 
 
-def staffs(gray):
-    found = _staffs_at(gray, 235)
-    for group in _staffs_at(gray, 185):
+def staffs(gray, rules=5):
+    found = _staffs_at(gray, 235, rules)
+    for group in _staffs_at(gray, 185, rules):
         if not any(abs(group[0]-other[0]) < max(3, group[2]*2) for other in found):
             found.append(group)
     return sorted(found)
 
 
-def auto_region(frame, mode="auto"):
+def clean_tab(frame):
+    """Normalize both dark TAB on paper and white TAB over dark footage."""
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if frame.ndim == 3 else frame
+    if np.mean(gray > 200) > .55:
+        # Keep faint string rules and colored active fret numbers.
+        return frame.min(axis=2) if frame.ndim == 3 else frame.copy()
+    # Bright thin glyphs survive the opening; broad objects in the footage do not.
+    white = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, np.ones((15, 15), np.uint8))
+    ink = (white > 30) & (gray > 145)
+    result = np.where(ink, 0, 255).astype(np.uint8)
+    # The string rules can be much fainter than the digits. Detect their contrast
+    # against adjacent rows, then retain them as gray rules in the printable image.
+    thin = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, np.ones((7, 1), np.uint8))
+    rules_image = np.where(thin > 12, 0, 255).astype(np.uint8)
+    for first, last, spacing in staffs(rules_image, 6):
+        for y in np.linspace(first, last, 6).round().astype(int):
+            result[y] = np.minimum(result[y], 185)
+    return result
+
+
+def auto_region(frame, mode="auto", notation="staff"):
     h, w = frame.shape[:2]
     gray = clean_score(frame, flatten=False)
-    groups = staffs(gray)
+    rules = 6 if notation == 'guitar' else 5
+    if notation == 'guitar':
+        # Inspect the lower panel separately so performance footage does not
+        # determine the polarity of a white score strip.
+        if np.mean(frame > 200) > .55:
+            gray = clean_tab(frame)
+        else:
+            boundary = int(h*.70)
+            gray[boundary:] = clean_tab(frame[boundary:])
+    groups = staffs(gray, rules)
     if mode == "page":
         return Region()
     if mode == "auto" and len(groups) >= 2 and np.mean(gray > 225) > .7:
@@ -105,6 +154,10 @@ def auto_region(frame, mode="auto"):
     top = first
     while top > 0 and white[top-1] > .76:
         top -= 1
+    if notation == 'guitar':
+        light_panel = np.mean(frame[first:lower[0][1]+1] > 200) > .55
+        top = top if light_panel and top > 0 else max(0, int(first-spacing*4))
+        return Region(left/w, top/h, right/w, 1)
     # Leave room for tempo, section labels and accents even with translucent panels.
     top = min(top, max(0, int(first-spacing*7)))
     return Region(left/w, top/h, right/w, 1)
@@ -120,7 +173,18 @@ def signature(gray):
     return ink
 
 
-def difference(a, b):
+def tab_signature(gray):
+    """Compare fret numbers without the moving playback box or playhead."""
+    ink = (gray < 150).astype(np.uint8)
+    groups = staffs(gray, 6)
+    spacing = groups[0][2] if groups else max(5, gray.shape[0]/14)
+    vertical = cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((max(12, int(spacing*2.5)), 1), np.uint8))
+    horizontal = cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((1, max(30, gray.shape[1]//20)), np.uint8))
+    ink[(vertical | horizontal) > 0] = 0
+    return signature(255-ink*255)
+
+
+def difference(a, b, *, fine=False):
     """Ink-relative error; one-pixel compression jitter is tolerated."""
     if a.shape != b.shape:
         return 1.0
@@ -128,8 +192,14 @@ def difference(a, b):
     da, db = cv2.dilate(a, kernel), cv2.dilate(b, kernel)
     changed = (a & (1-db)) | (b & (1-da))
     # Thin compression noise on stems must not create a new score view.
-    changed = cv2.morphologyEx(changed, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8),
-                             borderType=cv2.BORDER_CONSTANT, borderValue=0)
+    if fine:
+        count, labels, stats, _ = cv2.connectedComponentsWithStats(changed)
+        keep = stats[:, cv2.CC_STAT_AREA] >= 3
+        keep[0] = False
+        changed = keep[labels].astype(np.uint8)
+    else:
+        changed = cv2.morphologyEx(changed, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8),
+                                 borderType=cv2.BORDER_CONSTANT, borderValue=0)
     score = float(changed.sum()) / max(1, int(a.sum())+int(b.sum()))
     # A single changed note matters even when the rest of a large page is identical.
     for y in range(0, a.shape[0], 100):
@@ -138,12 +208,14 @@ def difference(a, b):
             count = int(a[area].sum())+int(b[area].sum())
             if count >= 100:
                 score = max(score, float(changed[area].sum())/count)
-    return score
+    # TAB digits have fewer pixels than noteheads; measure the fraction of one
+    # frame's ink so a small fret-number change is not averaged away.
+    return min(1.0, score*2) if fine else score
 
 
-def split_systems(gray, padding=2, *, with_bounds=False):
+def split_systems(gray, padding=2, *, with_bounds=False, rules=5):
     """Assign connected notation to each staff without slicing through symbols."""
-    groups = staffs(gray)
+    groups = staffs(gray, rules)
     if not groups:
         return []
     h, w = gray.shape
@@ -188,9 +260,9 @@ def split_systems(gray, padding=2, *, with_bounds=False):
     return result
 
 
-def system_signature(image):
+def system_signature(image, rules=5):
     """Align on the first staff so overlapping page crops can be compared."""
-    groups = staffs(image)
+    groups = staffs(image, rules)
     if len(groups) != 1:
         return None
     scale = 900/image.shape[1]
@@ -203,4 +275,4 @@ def system_signature(image):
     if length <= 0:
         return None
     target[target_top:target_top+length] = resized[source_top:source_top+length]
-    return signature(target)
+    return tab_signature(target) if rules == 6 else signature(target)

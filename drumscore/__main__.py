@@ -14,6 +14,7 @@ def main():
     parser.add_argument("-o", "--output", type=Path, default=Path("output/drum-score.pdf"))
     parser.add_argument("--title")
     parser.add_argument("--mode", choices=["auto", "bottom", "page"], default="auto")
+    parser.add_argument("--notation", choices=['staff', 'guitar'], default='staff', help='Standard five-line staff or six-string guitar TAB')
     parser.add_argument("--crop", type=float, nargs=4, metavar=("LEFT", "TOP", "RIGHT", "BOTTOM"), help="Crop coordinates from 0 to 1")
     parser.add_argument("--interval", type=float, default=.5, help="Seconds between samples (default .5)")
     parser.add_argument("--threshold", type=float, default=.035, help="Lower values detect smaller notation changes")
@@ -45,7 +46,7 @@ def main():
             path, title = download(args.source, args.output.parent/"cache", report)
             project = extract(path, args.output.parent, args.title or title, args.source, region, args.mode,
                               args.interval, args.threshold, args.start, args.end, report,
-                              remove_overlap=not args.keep_overlap)
+                              remove_overlap=not args.keep_overlap, notation=args.notation)
         pages = export_pdf(project, args.output, args.paper, args.gap, title=args.title,
                            left_margin_mm=args.left_margin, right_margin_mm=args.right_margin)
         print(f"Saved {args.output} ({pages} pages, {sum(line.included for line in project.lines)} lines)")

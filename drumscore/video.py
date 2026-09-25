@@ -147,9 +147,9 @@ def download(source, cache, progress=lambda *args: None, cancel=None):
         def debug(self, message):
             pass
         def warning(self, message):
-            progress(message, None)
+            pass  # Downloader diagnostics are not actionable workspace status.
         def error(self, message):
-            progress(message, None)
+            pass  # Fatal failures are raised by yt-dlp and shown by the task handler.
 
     options = {
         "format": ("bestvideo[height<=1080][vcodec^=avc]+bestaudio[ext=m4a]/"

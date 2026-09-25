@@ -14,7 +14,7 @@
   <header class="app-header">
     <div class="brand"><img src="icon.svg" alt=""><div>Video Sheet to PDF</div></div>
     <nav class="tabs" aria-label="Workspace"><button id="capture-tab" class="active" aria-selected="true">01 <span>Capture</span></button><button id="review-tab" aria-selected="false">02 <span>Review & export</span><b id="tab-count">0</b></button></nav>
-    <button id="open-project" class="subtle">Open project <span aria-hidden="true">↗</span></button>
+    <div class="header-actions"><select id="language" aria-label="Language"><option value="en">English</option><option value="ko">한국어</option><option value="ja">日本語</option></select><button id="open-project">Open project <span aria-hidden="true">↗</span></button></div>
   </header>
   <main>
     <section id="capture-screen" class="capture-layout" aria-label="Capture workspace">
@@ -27,6 +27,7 @@
         <section class="control-section"><div class="section-heading"><h2>Capture settings</h2><span class="step-dot">2</span></div>
           <div class="segmented" aria-label="Capture mode"><button id="automatic" aria-pressed="true">Automatic</button><button id="manual" aria-pressed="false">Manual</button></div>
           <div id="auto-controls">
+            <label class="field-label" for="notation">Notation</label><select id="notation"><option value="staff">Standard / drums</option><option value="guitar">Guitar TAB (6 strings)</option></select>
             <label class="field-label" for="layout">Score layout</label><div class="button-row"><select id="layout"><option value="auto">Auto detect</option><option value="bottom">Bottom strip</option><option value="page">Full page</option></select><button id="detect" title="Detect the score crop in this frame">Detect area</button></div>
             <details id="advanced"><summary>Extraction settings <span>+</span></summary><div class="field-grid"><label>Sample every (s)<input id="interval" type="number" value="0.5" min="0.05" step="0.05"></label><label>Change threshold<input id="threshold" type="number" value="0.035" min="0.001" max="0.99" step="0.005"></label><label>Start (s)<input id="start" type="number" value="0" min="0"></label><label>End (s)<input id="end" type="number" placeholder="Whole video" min="0"></label></div></details>
             <button id="extract" class="primary full">Extract score lines <span aria-hidden="true">→</span></button>

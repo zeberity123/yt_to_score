@@ -4,8 +4,8 @@ A Windows Electron app that turns the **sheet music already visible in a YouTube
 
 ## Start
 
-For Windows x64, download `Video-Sheet-to-PDF-0.3.1-win-x64.exe` from the
-[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.3.1)
+For Windows x64, download `Video-Sheet-to-PDF-0.4.0-win-x64.exe` from the
+[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.4.0)
 and double-click it. This portable executable includes Python, FFmpeg, and Node.js;
 no separate installation is needed. The first launch extracts the bundled app.
 Working projects and cached videos are stored under
@@ -29,7 +29,11 @@ The default line gap is 0 mm, with 3 mm left and right margins. **For print** se
 
 Paper sizes: A4 (default), A3, A5, B4 and B5 (ISO), Letter, Legal, and Tabloid. **Save project** sits immediately to the left of **Export PDF**.
 
-The app captures visible notation as images, so it can be used for other instruments too. Automatic extraction looks for five-line staffs and is heuristic; use manual capture for layouts it does not detect correctly. The `.drumscore` extension remains compatible with existing projects.
+Choose **English**, **한국어**, or **日本語** from the language menu immediately left of **Open project**. Controls, progress, review notes, and crop editing update immediately. The desktop app remembers the language across launches. Your project titles and filenames stay as entered.
+
+For guitar videos, choose **Notation → Guitar TAB (6 strings)** before loading or extracting. It detects all six string rules, retains fret numbers and rhythm marks, and converts white TAB over dark footage to dark notation on white paper. The default **Standard / drums** option keeps the five-line staff workflow. The `.drumscore` extension remains compatible with existing projects.
+
+Guitar extraction handles stationary panels that advance in steps. It ignores moving playback boxes and joins confidently matched overlapping panels at barlines; full panels remain available through **Edit crop**. Check partial measures at panel edges: uncertain overlaps are retained, and continuous scrolling, combined staff-plus-TAB systems, or other string counts may need manual capture. This is image capture, not editable tablature or audio transcription.
 
 Left and right margins can each be set from 0 to 40 mm, including decimal values. Smaller margins enlarge the score lines to fill the available width; top and bottom margins stay at 12 mm. White space inside a captured image is controlled by the score-area crop. Choose side margins that fit your printer's printable area.
 
@@ -53,6 +57,7 @@ Automatic results and manual captures are kept separately while the current vide
 - Full-screen score pages, separated into individual staff systems.
 - Pages that scroll in steps and retain some lines from the preceding view.
 - Light colored playback highlights, colored drum noteheads, and many translucent score backgrounds.
+- Six-string guitar TAB on white panels or in white over dark footage, using **Guitar TAB** mode.
 
 Each stable view is sampled over time. The extractor uses a median of sampled images to reduce moving highlights. Automatic extraction removes matching lines at successive page boundaries; **later returns to a previous passage are kept**. Use manual capture for intentional repeated lines at a page boundary, or the CLI's `--keep-overlap` option.
 
@@ -111,6 +116,8 @@ For current YouTube challenges, a supported JavaScript runtime may be needed. Th
 ```
 
 Other options: `--title`, `--start`, `--end`, `--threshold`, `--paper A4|A3|A5|B4|B5|Letter|Legal|Tabloid`, and `--keep-overlap`. Link timestamps are not used to trim the song; specify `--start`/`--end` explicitly.
+
+Use `--notation guitar` for six-string TAB, or `--notation staff` (default) for standard notation and drums. Non-actionable downloader warnings are hidden from workspace progress; final download failures still appear.
 
 ## Development and checks
 

@@ -7,6 +7,19 @@ import yt_dlp
 from drumscore.video import Cancelled, _youtube_download
 
 
+def test_downloader_warnings_stay_out_of_progress_but_failures_propagate(tmp_path, monkeypatch):
+    from drumscore import video
+    messages = []
+    def failed_download(url, options, progress, cancel):
+        options['logger'].warning('Deprecated Feature: Support for Python version 3.10 has been deprecated.')
+        options['logger'].error('Intermediate client diagnostic')
+        raise yt_dlp.utils.DownloadError('Video unavailable')
+    monkeypatch.setattr(video, '_youtube_download', failed_download)
+    with pytest.raises(yt_dlp.utils.DownloadError, match='Video unavailable'):
+        video.download('https://youtu.be/t_dHA1lgeAU', tmp_path, lambda text, fraction: messages.append(text))
+    assert messages == ['Connecting to YouTube…']
+
+
 def test_403_reextracts_and_rejects_lower_resolution_or_missing_audio(tmp_path, monkeypatch):
     calls = []
     final = tmp_path/'score.mp4'

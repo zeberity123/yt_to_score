@@ -8,7 +8,7 @@ import numpy as np
 from PIL import Image
 
 from .video import check_cancel, frames, metadata, preview
-from .vision import Region, auto_region, clean_score, difference, signature, split_systems, staffs, system_signature
+from .vision import Region, auto_region, clean_score, clean_tab, difference, signature, tab_signature, split_systems, staffs, system_signature
 
 
 @dataclass
@@ -31,11 +31,12 @@ class Extraction:
     region: Region
     lines: list[ScoreLine]
     warnings: list[str]
+    notation: str = 'staff'
 
     def save(self):
         data = {"version": 1, "title": self.title, "source": self.source,
                 "region": asdict(self.region), "lines": [asdict(line) for line in self.lines],
-                "warnings": self.warnings}
+                "warnings": self.warnings, "notation": self.notation}
         temp = self.directory / "project.tmp"
         try:
             temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -50,12 +51,16 @@ class Extraction:
         if data.get("version") != 1:
             raise ValueError("Unsupported project version.")
         return cls(filename.parent, data["title"], data["source"], Region(**data["region"]),
-                   [ScoreLine(**line) for line in data["lines"]], data.get("warnings", []))
+                   [ScoreLine(**line) for line in data["lines"]], data.get("warnings", []), data.get('notation', 'staff'))
 
 
 def extract(path, destination, title="Sheet music", source="", region=None, mode="auto",
             interval=.5, threshold=.035, start=0, end=None, progress=lambda *args: None, cancel=None,
-            remove_overlap=True):
+            remove_overlap=True, notation='staff'):
+    if notation not in ('staff', 'guitar'):
+        raise ValueError('Unknown notation type.')
+    rules = 6 if notation == 'guitar' else 5
+    clean = clean_tab if notation == 'guitar' else clean_score
     _, _, duration = metadata(path)
     end = duration if end is None else min(end, duration)
     if not 0 <= start < end:
@@ -66,21 +71,23 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
         candidates = []
         for t in (start, start+(end-start)*.1, start+(end-start)*.3):
             frame = preview(path, t)
-            crop = auto_region(frame, mode)
-            candidates.append((len(staffs(clean_score(crop.crop(frame)))), crop))
+            crop = auto_region(frame, mode, notation)
+            candidates.append((len(staffs(clean(crop.crop(frame)), rules)), crop))
         region = max(candidates, key=lambda item: item[0])[1]
     directory = Path(destination) / ("score_"+uuid.uuid4().hex[:10])
     directory.mkdir(parents=True)
-    project = Extraction(directory, title, source or str(path), region, [], [])
+    project = Extraction(directory, title, source or str(path), region, [], [], notation)
     current = None
     view_number = 0
     rejected = 0
     rng = random.Random(0)
     previous_systems = []
     overlap_count = 0
+    tab_panel = None
+    tab_joins = 0
 
     def flush():
-        nonlocal current, view_number, rejected, previous_systems, overlap_count
+        nonlocal current, view_number, rejected, previous_systems, overlap_count, tab_panel, tab_joins
         if current is None:
             return
         if current["count"] < 2:
@@ -92,28 +99,51 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
             rejected += 1
             current = None
             return
-        segments = split_systems(image, with_bounds=True)
+        segments = split_systems(image, with_bounds=True, rules=rules)
         strips = [strip for strip, bounds in segments]
         if strips:
             view_number += 1
-            systems = [system_signature(strip) for strip in strips]
+            systems = [system_signature(strip, rules) for strip in strips]
             overlap = 0
             if remove_overlap and len(strips) > 1 and len(previous_systems) > 1:
                 for size in range(min(len(systems), len(previous_systems)), 0, -1):
                     pairs = zip(previous_systems[-size:], systems[:size])
-                    if all(a is not None and b is not None and difference(a, b) < .035 for a, b in pairs):
+                    if all(a is not None and b is not None and difference(a, b, fine=current['fine']) < .035 for a, b in pairs):
                         overlap = size
                         break
             elif remove_overlap and len(strips) == 1 and previous_systems:
                 a, b = previous_systems[-1], systems[0]
-                if a is not None and b is not None and difference(a, b) < .035:
+                if a is not None and b is not None and difference(a, b, fine=current['fine']) < .035:
                     overlap = 1
             overlap_count += overlap
             previous_systems = systems
+            if len(segments) != 1:
+                tab_panel = None
+            if notation == 'guitar' and remove_overlap and not overlap and len(segments) == 1:
+                from .guitar import overlap_cut
+                panel, bounds = segments[0]
+                if tab_panel is not None and project.lines:
+                    previous_panel, previous_left = tab_panel
+                    cut = overlap_cut(previous_panel, panel)
+                    if cut and cut[0] > previous_left:
+                        previous_line = project.lines[-1]
+                        Image.fromarray(previous_panel[:, previous_left:cut[0]+1]).save(directory/previous_line.path)
+                        previous_line.crop[2] = previous_line.crop[0] + (cut[0]+1-previous_left)/current['frame'].shape[1]
+                        previous_line.original_crop = previous_line.crop.copy()
+                        segments[0] = (panel[:, cut[1]:], (bounds[0]+cut[1], bounds[1], bounds[2], bounds[3]))
+                        tab_panel = (panel, cut[1])
+                        tab_joins += 1
+                    else:
+                        tab_panel = (panel, 0)
+                else:
+                    tab_panel = (panel, 0)
             context_name = f"source_{view_number:04d}.png"
-            Image.fromarray(clean_score(current["frame"])).save(directory / context_name)
             fh, fw = current["frame"].shape[:2]
             rx, ry = int(region.left*fw), int(region.top*fh)
+            context = clean_score(current['frame'])
+            if notation == 'guitar':
+                context[ry:ry+image.shape[0], rx:rx+image.shape[1]] = image
+            Image.fromarray(context).save(directory / context_name)
             for strip, bounds in segments[overlap:]:
                 name = f"line_{len(project.lines)+1:04d}.png"
                 Image.fromarray(strip).save(directory / name)
@@ -128,9 +158,9 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
     try:
         for t, frame in iterator:
             check_cancel(cancel)
-            gray = clean_score(region.crop(frame))
-            sig = signature(gray)
-            if current is not None and difference(current["signature"], sig) <= threshold:
+            gray = clean(region.crop(frame))
+            sig = tab_signature(gray) if notation == 'guitar' else signature(gray)
+            if current is not None and difference(current["signature"], sig, fine=current['fine']) <= threshold:
                 current["count"] += 1
                 # A small reservoir spreads the median across the entire stable view.
                 if len(current["samples"]) < 9:
@@ -141,9 +171,12 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
                         current["samples"][index] = gray.copy()
             else:
                 flush()
-                if staffs(gray):
+                if staffs(gray, rules):
                     current = {"signature": sig, "samples": [gray.copy()], "count": 1, "time": t,
-                               "frame": frame.copy()}
+                               "frame": frame.copy(),
+                               # Translucent white-on-video TAB needs the same
+                               # speckle tolerance as moving drum-score panels.
+                               "fine": rules == 6 and np.mean(region.crop(frame) > 200) > .55}
             progress(f"Scanning {t:.1f}s / {end:.1f}s · {len(project.lines)} lines", (t-start)/(end-start))
         flush()
     finally:
@@ -154,6 +187,10 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
         project.warnings.append(f"Skipped {rejected} unstable sampled views (transitions or views shorter than two samples). Review for missing lines; use a smaller sample interval if needed.")
     if overlap_count:
         project.warnings.append(f"Removed {overlap_count} matching lines at consecutive page boundaries. Disable page-overlap removal if these are intentional repeats.")
+    if tab_joins:
+        project.warnings.append(f"Joined {tab_joins} overlapping TAB views at matching barlines. Original panels remain available in Edit crop.")
+    if notation == 'guitar':
+        project.warnings.append('Check partial measures at TAB panel edges. Uncertain overlaps are kept; use Edit crop to adjust them. Continuously moving TAB may require manual capture.')
     project.warnings.append("Review the lines before printing. Continuous scrolling, animated notation, and identical consecutive score views may need manual capture or editing.")
     project.save()
     progress(f"Ready: {len(project.lines)} lines from {view_number} score views", 1)
