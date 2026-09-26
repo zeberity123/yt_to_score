@@ -13,7 +13,7 @@ with PyInstaller, and packages an Electron portable executable with electron-bui
 It downloads the license for the exact Node.js runtime being bundled if the local
 installation does not contain it. Packaging tools and Electron may require downloads.
 
-The output is `dist/Video-Sheet-to-PDF-0.9.1-win-x64.exe`. The unpacked application
+The output is `dist/Video-Sheet-to-PDF-0.11.0-win-x64.exe`. The unpacked application
 is also available at `dist/win-unpacked/Video Sheet to PDF.exe` for verification.
 The portable application extracts at launch and stores working data under Electron's
 user-data folder (`%APPDATA%/Video Sheet to PDF/output`), outside the temporary app.
@@ -26,6 +26,7 @@ npm run test:desktop
 npm run test:playback
 npm run test:languages
 npm run test:instruments
+npm run test:free
 Remove-Item Env:SCORE_TEST_EXECUTABLE
 npm run test:portable
 ```

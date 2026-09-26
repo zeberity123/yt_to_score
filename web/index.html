@@ -26,11 +26,14 @@
           <p id="source-note" class="help">YouTube · MP4 · MOV · MKV · WebM · AVI</p>
         </section>
         <section class="control-section"><div class="section-heading"><h2>Capture settings</h2><span class="step-dot">2</span></div>
-          <div class="segmented" aria-label="Capture mode"><button id="automatic" aria-pressed="true">Automatic</button><button id="manual" aria-pressed="false">Manual</button></div>
+          <div class="segmented" aria-label="Capture mode"><button id="automatic" aria-pressed="true">Automatic</button><button id="manual" aria-pressed="false">Manual</button><button id="free" aria-pressed="false">Chord</button></div>
           <div id="auto-controls">
+            <div id="notation-controls">
             <label class="field-label" for="notation">Notation</label><select id="notation"><option value="staff">Drums</option><option value="guitar">Guitar TAB (6 strings)</option><option value="bass">Bass</option><option value="piano">Piano</option></select>
             <label class="field-label" for="layout">Score layout</label><div class="button-row"><select id="layout"><option value="auto">Auto detect</option><option value="bottom">Bottom strip</option><option value="page">Full page</option></select><button id="detect" title="Detect the score crop in this frame">Detect area</button></div>
-            <details id="advanced"><summary>Extraction settings <span>+</span></summary><div class="field-grid"><label>Sample every (s)<input id="interval" type="number" value="0.5" min="0.05" step="0.05"></label><label>Change threshold<input id="threshold" type="number" value="0.035" min="0.001" max="0.99" step="0.005"></label><label>Start (s)<input id="start" type="number" value="0" min="0"></label><label>End (s)<input id="end" type="number" placeholder="Whole video" min="0"></label></div></details>
+            </div>
+            <p id="free-help" class="help" hidden>Draw around the outlined blue chords and white lyrics. Chord detects each text row, including chord-only rows. Keep capo labels and the bottom score outside the rectangle.</p>
+            <details id="advanced"><summary role="button" aria-expanded="false">Extraction settings <svg class="settings-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m5 7 5 5 5-5"/></svg></summary><div class="field-grid"><label>Sample every (s)<input id="interval" type="number" value="0.5" min="0.05" step="0.05"></label><label>Change threshold<input id="threshold" type="number" value="0.035" min="0.001" max="0.99" step="0.005"></label><label>Start (s)<input id="start" type="number" value="0" min="0"></label><label>End (s)<input id="end" type="number" placeholder="Whole video" min="0"></label></div></details>
             <button id="extract" class="primary full">Extract score lines <span aria-hidden="true">→</span></button>
           </div>
           <div id="manual-controls" hidden><button id="add-line" class="primary full">+ Add line <span id="manual-count">0</span></button><button id="review-lines" class="text-button full">Review captured lines →</button></div>
@@ -66,6 +69,7 @@
         </div>
         <section class="export-card" aria-label="PDF settings">
           <label class="field-label" for="pdf-title">PDF & project title</label><input id="pdf-title" value="Sheet music">
+          <div class="background-controls"><label class="field-label" for="background">Background cleanup</label><select id="background"><option value="white">White (default)</option><option value="black">Black</option><option value="original">Off — original capture</option></select><p class="help">Applies to previews and PDF. Original captures stay available for crop editing.</p></div>
           <div class="print-layout-controls">
             <label class="check-row" id="reflow-label"><input id="reflow-bars" type="checkbox"><span>Arrange TAB bars</span></label>
             <label class="field-label" id="bars-label">Target bars per line<input id="bars-per-line" type="number" value="6" min="4" max="16" step="1"></label>

@@ -68,7 +68,7 @@ async function refresh() {
   const next = await api.state();
   const previous = state;
   state = next;
-  if (next.notation && next.notation !== previous?.notation) $('notation').value = next.notation;
+  if (next.notation && next.notation !== 'free' && next.notation !== previous?.notation) $('notation').value = next.notation;
   if (!initialized) { Object.keys(next.artifacts).forEach(key => downloaded.add(key)); initialized = true; }
   if (job === 'print-preview' && !next.busy) {
     if (!next.error) showPrintPreview();
@@ -110,9 +110,14 @@ function imageUrl(index, kind = 'line') { return api.url('image', {index, kind, 
 function render() {
   if (!state) return;
   const manual = state.mode === 'manual';
+  const free = state.mode === 'free';
   document.body.classList.toggle('has-video', !!state.video);
-  $('automatic').setAttribute('aria-pressed', String(!manual));
+  $('automatic').setAttribute('aria-pressed', String(!manual && !free));
   $('manual').setAttribute('aria-pressed', String(manual));
+  $('free').setAttribute('aria-pressed', String(free));
+  $('notation-controls').hidden = free;
+  $('free-help').hidden = !free;
+  $('extract').firstChild.textContent = free ? 'Extract text lines ' : 'Extract score lines ';
   $('auto-controls').hidden = manual;
   $('manual-controls').hidden = !manual;
   const mediaKey = state.video ? state.videoId : '';
@@ -128,6 +133,7 @@ function render() {
   $('seek').max = Math.max(0.01, state.duration-.01);
   if (!titleDirty && document.activeElement !== $('pdf-title')) $('pdf-title').value = state.title;
   const bars=state.barsPerLine || 0;
+  $('background').value=state.background || 'white';
   $('reflow-bars').checked=bars>0;
   if (bars && document.activeElement !== $('bars-per-line')) $('bars-per-line').value=bars;
   $('reflow-label').hidden=$('bars-label').hidden=!['guitar','bass'].includes(state.notation);
@@ -137,7 +143,7 @@ function render() {
   $('manual-count').textContent = state.lines.length;
   $('included-count').textContent = state.lines.length ? `${state.lines.filter(l => l.included).length} included · in export order` : 'Capture a line to get started.';
   selected = Math.max(0, Math.min(selected, state.lines.length-1));
-  const signature = `${state.projectId}:${state.mode}:${JSON.stringify(state.lines)}`;
+  const signature = `${state.projectId}:${state.mode}:${state.background}:${JSON.stringify(state.lines)}`;
   if (signature !== listSignature) { listSignature = signature; renderLines(); }
   renderSelection();
   $('warning-list').replaceChildren(...state.warnings.map(text => { const li = document.createElement('li'); li.textContent = text; return li; }));
@@ -161,7 +167,7 @@ function renderLines() {
     const tick = document.createElement('span'); tick.textContent = line.included ? '✓' : '—'; head.append(title,tick);
     const img = document.createElement('img'); img.src = imageUrl(index); img.alt = ''; img.loading = 'lazy';
     img.style.transform=`scaleY(${line.height_scale || 1})`;
-    const note = document.createElement('small'); note.textContent = `${clock(line.time,true)} · ${line.view ? 'Automatic capture' : 'Manual capture'}`;
+    const note = document.createElement('small'); note.textContent = `${clock(line.time,true)} · ${state.mode === 'free' ? 'Chord capture' : line.view ? 'Automatic capture' : 'Manual capture'}`;
     button.append(head,img,note);
     button.addEventListener('click', () => { selected = index; renderSelection(); updateControls(); });
     return button;
@@ -174,7 +180,7 @@ function renderSelection() {
   $('line-image').hidden = !line;
   $('preview-title').textContent = line ? `Line ${String(selected+1).padStart(2,'0')}` : 'Line preview';
   if (line) {
-    const key = `${state.projectId}:${state.mode}:${selected}:${line.path}`;
+    const key = `${state.projectId}:${state.mode}:${state.background}:${selected}:${line.path}`;
     if ($('line-image').dataset.key !== key) { $('line-image').src = imageUrl(selected); $('line-image').dataset.key = key; }
     $('include-line').textContent = 'Exclude line';
     $('line-meta').textContent = `${clock(line.time,true)} · ${line.included ? 'Included in PDF' : 'Excluded from PDF'}`;
@@ -193,7 +199,7 @@ function updateControls() {
   const ready = loaded && video.readyState >= 2 && !video.seeking;
   const conditions = {
     'load-video':!!$('source').value.trim(), 'choose-video':true, 'open-project':true,
-    automatic:true, manual:true, detect:ready, extract:loaded, play:ready,
+    automatic:true, manual:true, free:true, detect:ready, extract:loaded, play:ready,
     'add-line':ready, speed:loaded, mute:loaded && state.hasAudio !== false, volume:loaded && state.hasAudio !== false,
     'keep-review-audio':loaded && state.hasAudio !== false, 'review-audio':loaded && state.hasAudio !== false,
     'review-play':ready && state.hasAudio !== false && $('review-audio').checked,
@@ -205,6 +211,7 @@ function updateControls() {
     'preview-print':!!state?.lines.some(l=>l.included), 'reflow-bars':!!state?.lines.length && ['guitar','bass'].includes(state.notation),
     'bars-per-line':!!state?.barsPerLine,
     'for-print':true, notation:true,
+    background:!!state?.lines.length,
   };
   for (const [id, enabled] of Object.entries(conditions)) $(id).disabled = locked || !enabled;
   $('seek').disabled = locked || !loaded;
@@ -249,7 +256,7 @@ listen('open-project','click', () => choose('project'));
 listen('video-file','change', e => upload(e.target.files[0], 'video'));
 listen('project-file','change', e => upload(e.target.files[0], 'project'));
 listen('load-video','click', loadVideo);
-for (const mode of ['automatic','manual']) listen(mode,'click', async () => {
+for (const mode of ['automatic','manual','free']) listen(mode,'click', async () => {
   video.pause(); selected = 0;
   await command('mode', {mode});
   if (mode === 'manual') setReviewAudio(true);
@@ -320,6 +327,8 @@ async function setPrintSettings() {
   await command('print-settings',{bars:$('reflow-bars').checked?Number($('bars-per-line').value):0});
 }
 listen('reflow-bars','change',setPrintSettings);
+listen('background','change',()=>command('background',{background:$('background').value}));
+listen('advanced','toggle',()=>$('advanced').querySelector('summary').setAttribute('aria-expanded',String($('advanced').open)));
 listen('bars-per-line','change',setPrintSettings);
 listen('preview-print','click',()=>{video.pause();job='print-preview';return command('preview-print');});
   listen('close-print-preview','click',()=>$('print-preview').close());

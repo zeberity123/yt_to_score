@@ -13,7 +13,8 @@ def main():
     parser.add_argument("source", nargs="?", help="YouTube link or local video; omit to launch desktop app")
     parser.add_argument("-o", "--output", type=Path, default=Path("output/drum-score.pdf"))
     parser.add_argument("--title")
-    parser.add_argument("--mode", choices=["auto", "bottom", "page"], default="auto")
+    parser.add_argument("--mode", choices=["auto", "bottom", "page", "free"], default="auto",
+                        help="Free detects outlined chords/lyrics inside --crop")
     parser.add_argument("--notation", choices=['staff', 'guitar', 'bass', 'piano'], default='staff', help='Drums, guitar TAB, bass notation/TAB, or paired piano staves')
     parser.add_argument("--crop", type=float, nargs=4, metavar=("LEFT", "TOP", "RIGHT", "BOTTOM"), help="Crop coordinates from 0 to 1")
     parser.add_argument("--interval", type=float, default=.5, help="Seconds between samples (default .5)")

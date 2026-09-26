@@ -9,6 +9,7 @@ from PIL import Image
 
 from .editing import project_file
 from .vision import staffs, runs
+from .background import render_background
 
 
 @dataclass
@@ -81,10 +82,13 @@ def tab_measures(image, rules):
         return None
     # Preserve the TAB clef/time-signature prefix with the first measure.
     starts_at_bar=boundaries[0] <= max(spacing*6,image.width*.10)
-    ends_at_bar=boundaries[-1] >= image.width-max(4,spacing*.25)
+    # A manually selected panel often includes a narrow margin after its final
+    # barline. Keep those columns with the final measure, not as a tiny bar.
+    edge_margin=max(4,spacing*.75)
+    ends_at_bar=boundaries[-1] >= image.width-edge_margin
     if starts_at_bar:
         boundaries=boundaries[1:]
-    cuts=[0]+[x for x in boundaries if x < image.width-max(4,spacing*.25)]+[image.width]
+    cuts=[0]+[x for x in boundaries if x < image.width-edge_margin]+[image.width]
     if (len(cuts)==2 and not (starts_at_bar and ends_at_bar)) or any(b-a < spacing*2 for a,b in zip(cuts,cuts[1:])):
         return None
     return list(zip(cuts,cuts[1:])), first, spacing
@@ -104,7 +108,8 @@ def print_rows(project,bars_per_line=None):
             return
         above=max(anchor for _,anchor in pending)
         below=max(image.height-anchor for image,anchor in pending)
-        result=Image.new('RGB',(sum(image.width for image,_ in pending),above+below),'white')
+        result=Image.new('RGB',(sum(image.width for image,_ in pending),above+below),
+                         'black' if project.background == 'black' else 'white')
         x=0
         for image,anchor in pending:
             result.paste(image,(x,above-anchor))
@@ -120,6 +125,7 @@ def print_rows(project,bars_per_line=None):
         with Image.open(project_file(project,line.path)) as source:
             image=source.convert('RGB')
         measures=tab_measures(image,6 if project.notation=='guitar' else 4) if target else None
+        image=render_background(image,project.notation,project.background)
         if not measures:
             flush()
             rows.append(PrintRow(image,scale))

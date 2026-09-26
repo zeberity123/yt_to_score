@@ -24,6 +24,7 @@ from .extract import extract
 from .manual import append_line, new_manual_project
 from .pdf import export_pdf
 from .print_layout import print_rows, validate_bars, validate_bar_override
+from .background import render_background, validate_background
 from .video import Cancelled, audio_codec, check_cancel, download, ffmpeg_path, metadata, preview
 from .vision import Region, auto_region
 from .notation import NOTATIONS, clean_notation, split_notation
@@ -48,7 +49,7 @@ class Workspace:
         self.revision = 0
         self.mode = 'automatic'
         self.notation = 'staff'
-        self.projects = {'automatic': None, 'manual': None}
+        self.projects = {'automatic': None, 'manual': None, 'free': None}
         self.video = None
         self.video_id = None
         self.media = None
@@ -58,7 +59,7 @@ class Workspace:
         self.title = 'Sheet music'
         self.region = Region()
         self.artifacts = {}
-        self.removed = {'automatic': [], 'manual': []}
+        self.removed = {'automatic': [], 'manual': [], 'free': []}
         self.print_preview = None
         self.print_images = []
 
@@ -76,6 +77,7 @@ class Workspace:
                     'hasAudio': self.has_audio, 'notation': self.notation,
                     'canUndo': bool(self.removed[self.mode]),
                     'barsPerLine': project.bars_per_line if project else 0,
+                    'background': project.background if project else 'white',
                     'printPreview': self.print_preview,
                     'undoIndex': self.removed[self.mode][-1][0] if self.removed[self.mode] else None,
                     'region': asdict(self.region), 'source': Path(self.video).name if self.video else '',
@@ -165,13 +167,13 @@ class Workspace:
             if self.busy:
                 raise ValueError('Wait for the current operation or cancel it first.')
             self.error = None
-            if action in ('load','open','mode','extract','capture','add-view','remove','undo','include','move','edit','print-settings'):
+            if action in ('load','open','mode','extract','capture','add-view','remove','undo','include','move','edit','print-settings','background'):
                 self.print_preview=None
                 self.print_images=[]
             notation = self.notation
             if action in ('load','detect','extract'):
-                notation = str(data.get('notation', self.notation))
-                if notation not in NOTATIONS:
+                notation = 'free' if self.mode == 'free' else str(data.get('notation', self.notation))
+                if notation not in (*NOTATIONS, 'free') or (notation == 'free' and self.mode != 'free'):
                     raise ValueError('Unknown notation type.')
             if action == 'load':
                 source = str(data['source']).strip()
@@ -181,7 +183,7 @@ class Workspace:
                     _, _, duration = metadata(path)
                     sound_codec = audio_codec(path)
                     media = self.browser_media(path, sound_codec)
-                    region = auto_region(preview(path, 0 if mode == 'manual' else min(20, duration*.1)), data.get('layout', 'auto'), notation)
+                    region = Region() if mode == 'free' else auto_region(preview(path, 0 if mode == 'manual' else min(20, duration*.1)), data.get('layout', 'auto'), notation)
                     check_cancel(self.cancel)
                     with self.lock:
                         self.video, self.media, self.source = path, media, source
@@ -189,16 +191,20 @@ class Workspace:
                         self.duration, self.title, self.region = duration, title, region
                         self.has_audio = sound_codec is not None
                         self.notation = notation
-                        self.projects = {'automatic': None, 'manual': None}
-                        self.removed = {'automatic': [], 'manual': []}
+                        self.projects = {'automatic': None, 'manual': None, 'free': None}
+                        self.removed = {'automatic': [], 'manual': [], 'free': []}
                         self.status = 'Video ready. Drag on the video to select your score.'
                 self.start(task)
             elif action == 'mode':
                 if data['mode'] not in self.projects:
                     raise ValueError('Unknown capture mode.')
                 self.mode = data['mode']
-                if self.project and self.project.notation in NOTATIONS:
+                if self.project and self.project.notation in (*NOTATIONS, 'free'):
                     self.notation = self.project.notation
+                elif self.mode == 'free':
+                    self.notation = 'free'
+                elif self.notation == 'free':
+                    self.notation = 'staff'
             elif action == 'title':
                 self.title = str(data['title'])[:500]
                 if self.project:
@@ -208,21 +214,25 @@ class Workspace:
                 self.region = Region(*data['crop'])
             elif action == 'detect':
                 self.require_video()
+                if self.mode == 'free':
+                    raise ValueError('Draw a rectangle around the chords and lyrics before using Chord mode.')
                 self.region = auto_region(preview(self.video, float(data['time'])), data.get('layout', 'auto'), notation)
                 self.notation = notation
             elif action == 'extract':
                 self.require_video()
                 region = self.region
+                capture_mode = 'free' if self.mode == 'free' else 'automatic'
                 def task():
                     project = extract(self.video, self.output, self.title, self.source, region,
+                                      mode='free' if capture_mode == 'free' else 'auto',
                                       interval=float(data.get('interval', .5)), threshold=float(data.get('threshold', .035)),
                                       start=float(data.get('start', 0)), end=float(data['end']) if data.get('end') not in ('', None) else None,
                                       remove_overlap=bool(data.get('overlap', True)), progress=self.report, cancel=self.cancel,
                                       notation=notation)
                     with self.lock:
-                        self.projects['automatic'] = project
-                        self.removed['automatic'] = []
-                        self.mode = 'automatic'
+                        self.projects[capture_mode] = project
+                        self.removed[capture_mode] = []
+                        self.mode = capture_mode
                         self.notation = notation
                         self.status = f'{len(project.lines)} score lines ready to review.'
                 self.start(task)
@@ -245,18 +255,23 @@ class Workspace:
                     from PIL import Image
                     notation = self.project.notation
                     crop_frame = self.region.crop(frame)
-                    if notation in ('bass','piano'):
+                    if notation == 'free':
+                        from .free import text_mask, text_rows
+                        cleaned = cv2.cvtColor(crop_frame, cv2.COLOR_BGR2RGB)
+                        segments = [(cleaned[y0:y1, x0:x1], (x0,y0,x1,y1))
+                                    for x0,y0,x1,y1 in text_rows(text_mask(crop_frame))]
+                    elif notation in ('bass','piano'):
                         cleaned = clean_notation(crop_frame,notation)
                         segments = split_notation(cleaned,notation,with_bounds=True)
                     else:
                         cleaned = clean_tab(crop_frame) if notation == 'guitar' else clean_score(crop_frame)
                         segments = split_systems(cleaned,with_bounds=True,rules=6 if notation=='guitar' else 5)
                     if not segments:
-                        raise ValueError('No staff lines found in this crop.')
+                        raise ValueError('No text rows found in this crop.' if notation == 'free' else 'No staff lines found in this crop.')
                     source_name = 'source_' + uuid.uuid4().hex[:12] + '.png'
                     h, w = frame.shape[:2]
                     rx, ry = int(self.region.left*w), int(self.region.top*h)
-                    context = clean_score(frame)
+                    context = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) if notation == 'free' else clean_score(frame)
                     context[ry:ry+cleaned.shape[0],rx:rx+cleaned.shape[1]] = cleaned
                     Image.fromarray(context).save(self.project.directory/source_name)
                     at = min(len(self.project.lines), max(0, int(data.get('after', len(self.project.lines)-1))+1))
@@ -270,8 +285,10 @@ class Workspace:
                 self.status = f'{len(self.project.lines)} lines captured.'
             elif action == 'open':
                 project = open_project(data['path'], self.output)
-                self.projects = {'automatic': project, 'manual': None}
-                self.removed = {'automatic': [], 'manual': []}
+                mode = 'free' if project.notation == 'free' else 'automatic'
+                self.projects = {'automatic': None, 'manual': None, 'free': None}
+                self.projects[mode] = project
+                self.removed = {'automatic': [], 'manual': [], 'free': []}
                 # Older projects stored exclusions in the list. Present them as removed,
                 # while allowing Undo to bring them back under the new interaction.
                 visible = []
@@ -280,15 +297,27 @@ class Workspace:
                         visible.append(line)
                     else:
                         line.included = True
-                        self.removed['automatic'].append((len(visible), line))
+                        self.removed[mode].append((len(visible), line))
                 project.lines = visible
-                self.mode, self.title = 'automatic', project.title
-                self.notation = project.notation if project.notation in NOTATIONS else 'staff'
+                self.mode, self.title = mode, project.title
+                self.region = project.region
+                self.notation = project.notation if project.notation in (*NOTATIONS, 'free') else 'staff'
                 self.video = self.media = None
                 self.video_id = None
                 self.duration = 0
                 self.has_audio = False
                 self.status = 'Project opened. Your crops and original images are available.'
+            elif action == 'background':
+                if not self.project:
+                    raise ValueError('Capture lines or open a project first.')
+                background = validate_background(data.get('background'))
+                old = self.project.background
+                self.project.background = background
+                try:
+                    self.project.save()
+                except Exception:
+                    self.project.background = old
+                    raise
             elif action == 'print-settings':
                 if not self.project:
                     raise ValueError('Capture lines or open a project first.')
@@ -457,6 +486,28 @@ class Handler(BaseHTTPRequestHandler):
         token = self.headers.get('X-Session-Token') or query.get('token', [''])[0]
         return secrets.compare_digest(token, self.server.token)
 
+    def image_bytes(self, payload):
+        value = self.headers.get('Range', '')
+        if not value:
+            return self.respond(200, payload, 'image/png')
+        import re
+        match = re.fullmatch(r'bytes=(\d*)-(\d*)', value)
+        if not match or not any(match.groups()):
+            return self.respond(416, {'error': 'Invalid range'})
+        a, b = match.groups()
+        size = len(payload)
+        start = int(a) if a else max(0, size-int(b))
+        end = min(size-1, int(b)) if a and b else size-1
+        if start > end or start >= size:
+            return self.respond(416, {'error': 'Invalid range'})
+        self.send_response(206)
+        self.send_header('Content-Type', 'image/png')
+        self.send_header('Content-Range', f'bytes {start}-{end}/{size}')
+        self.send_header('Content-Length', str(end-start+1))
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.wfile.write(payload[start:end+1])
+
     def file(self, path, download_name=None):
         size = path.stat().st_size
         start, end, partial = 0, size-1, False
@@ -531,6 +582,13 @@ class Handler(BaseHTTPRequestHandler):
                         line = project.lines[index]
                         name = (line.source_path or line.original_path or line.path) if query.get('kind', [''])[0] == 'source' else line.path
                         path = project_file(project, name)
+                        if query.get('kind', [''])[0] != 'source' and project.background != 'original':
+                            from PIL import Image
+                            with Image.open(path) as original:
+                                rendered = render_background(original, project.notation, project.background)
+                            buffer = io.BytesIO()
+                            rendered.save(buffer, format='PNG')
+                            return self.image_bytes(buffer.getvalue())
                     return self.file(path)
                 if url.path == '/api/download':
                     entry = workspace.artifacts[query['id'][0]]

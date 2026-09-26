@@ -37,12 +37,13 @@ class Extraction:
     notation: str = 'staff'
     bars_per_line: int = 0
     bar_overrides: dict[str, int] = field(default_factory=dict)
+    background: str = 'white'
 
     def save(self):
         data = {"version": 1, "title": self.title, "source": self.source,
                 "region": asdict(self.region), "lines": [asdict(line) for line in self.lines],
                 "warnings": self.warnings, "notation": self.notation, "bars_per_line": self.bars_per_line,
-                "bar_overrides": self.bar_overrides}
+                "bar_overrides": self.bar_overrides, "background": self.background}
         temp = self.directory / "project.tmp"
         try:
             temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -56,14 +57,22 @@ class Extraction:
         data = json.loads(filename.read_text(encoding="utf-8"))
         if data.get("version") != 1:
             raise ValueError("Unsupported project version.")
+        warnings = [
+            'Review chord and lyric rows before printing. Use Background cleanup to choose White, Black, or Original. Moving or unoutlined text may need Manual mode.'
+            if warning.startswith(('Free mode keeps original colors', 'Chord mode keeps original colors'))
+            else warning for warning in data.get('warnings', [])]
         return cls(filename.parent, data["title"], data["source"], Region(**data["region"]),
-                   [ScoreLine(**line) for line in data["lines"]], data.get("warnings", []), data.get('notation', 'staff'),
-                   data.get('bars_per_line', 0), data.get('bar_overrides', {}))
+                   [ScoreLine(**line) for line in data["lines"]], warnings, data.get('notation', 'staff'),
+                   data.get('bars_per_line', 0), data.get('bar_overrides', {}), data.get('background', 'white'))
 
 
 def extract(path, destination, title="Sheet music", source="", region=None, mode="auto",
             interval=.5, threshold=.035, start=0, end=None, progress=lambda *args: None, cancel=None,
             remove_overlap=True, notation='staff'):
+    if mode == 'free':
+        from .free import extract_free
+        return extract_free(path, destination, title, source, region, interval, threshold,
+                            start, end, progress, cancel, remove_overlap)
     if notation not in NOTATIONS:
         raise ValueError('Unknown notation type.')
     rules = {'guitar':6,'bass':4}.get(notation,5)
