@@ -125,12 +125,6 @@ Both settings are saved in projects and work on existing captures without
 re-extracting. Duplicate-detection improvements remain the default for all new
 automatic extractions; existing captures are never silently re-extracted.
 
-For the saved `_iF6NXbkCws` reference captures, A4 with 3 mm side margins and no
-line gap produces 15 pages in the original layout, 6 pages at six bars per line,
-and 5 pages at six bars with 75% height. Eight bars produces 4 pages at original
-height. These are image arrangements, not music re-engraving: check annotations,
-ties and partial measures where a print line breaks, and choose a readable size.
-
 Extraction is heuristic. Review the result before printing, especially dense annotations, transitions, partial lines at screen edges, and translucent overlays. Closely packed text can be associated with the neighboring line.
 
 - **Missed short views:** reduce “Sample every” from `0.5` to `0.25` seconds. A view must survive at least two samples.
