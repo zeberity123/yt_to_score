@@ -7,10 +7,11 @@ and print output. Capture, review, crop editing, and phone layouts share the sam
 
 ## Start
 
-Version 0.17.0 offers **Automatic**, **AI** and **Manual** capture; see
-[the release notes](docs/RELEASE-0.17.0.md). The portable build is
-`Video-Sheet-to-PDF-AI-0.17.0-win-x64.exe` on the
-[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.17.0). See the
+Version 0.17 offers **Automatic**, **AI** and **Manual** capture; see the release
+notes for [0.17.0](docs/RELEASE-0.17.0.md) and [0.17.1](docs/RELEASE-0.17.1.md)
+(page-fit PDF options, larger crop editor). The portable build is
+`Video-Sheet-to-PDF-AI-0.17.1-win-x64.exe` on the
+[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.17.1). See the
 [integrated AI guide](docs/AI-INTEGRATED.md) for subscription/API connections, the
 AI method choice (keep video images with an AI check, or re-engrave), instrument
 selection, source row breaks, additional instructions, the AI edit box, and editable
@@ -36,7 +37,7 @@ If dependencies are already installed in this workspace, you can go straight to 
 3. Check the preview. Drag a rectangle to adjust the crop if needed. The time slider updates the displayed frame immediately. Include tempo markings, section letters, and symbols above/below the staff.
 4. In **Automatic** mode, click **Extract score lines** in the right sidebar of **Capture**. The video and timeline occupy the left side. Expand **Extraction settings** for sampling, change threshold, and start/end options. The controls column keeps its width when switching modes.
 5. In **Review & export**, select lines to inspect them. **Exclude line** removes a line from the list and PDF; **Undo** restores it. **Duplicate** inserts a copy immediately after the selected line, preserving its crop and height. Edit and move the copy independently. Move a selected line up/down, or click **Edit crop** to crop or expand it.
-6. Set the PDF title, paper size, line gap, and left/right margins, then click **Export PDF**.
+6. Set the PDF title, paper size, line gap, left/right and top/bottom margins, the title size, and whether the title and page numbers are printed, then click **Export PDF**. Smaller top/bottom margins or no page numbers let one more line fit on a page.
 
 The default line gap is 0 mm, with 3 mm left and right margins. **For print** sets the gap to 0 mm and both side margins to 12 mm (1.2 cm). Images retain their aspect ratio and lines never split across PDF pages. **Export PDF** opens a desktop save dialog; the browser version downloads the PDF. **Save project** creates a portable `.drumscore` file using the **PDF & project title**, including original source images and edits.
 

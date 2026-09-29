@@ -50,7 +50,8 @@ def title_fallbacks():
 
 
 def export_pdf(project, filename, paper="A4", gap_mm=0, margin_mm=12, title=None,
-               *, left_margin_mm=3, right_margin_mm=3, bars_per_line=None):
+               *, left_margin_mm=3, right_margin_mm=3, bars_per_line=None,
+               top_margin_mm=None, bottom_margin_mm=None, title_size=12, show_title=True, page_numbers=True):
     included = [line for line in project.lines if line.included]
     if not included:
         raise ValueError("Select at least one score line to export.")
@@ -60,11 +61,21 @@ def export_pdf(project, filename, paper="A4", gap_mm=0, margin_mm=12, title=None
     right_margin_mm = margin_mm if right_margin_mm is None else right_margin_mm
     if not 0 <= left_margin_mm <= 40 or not 0 <= right_margin_mm <= 40:
         raise ValueError("Left and right margins must be 0-40 mm.")
+    top_margin_mm = margin_mm if top_margin_mm is None else top_margin_mm
+    bottom_margin_mm = margin_mm if bottom_margin_mm is None else bottom_margin_mm
+    if not 0 <= top_margin_mm <= 40 or not 0 <= bottom_margin_mm <= 40:
+        raise ValueError("Top and bottom margins must be 0-40 mm.")
+    if not 6 <= title_size <= 36:
+        raise ValueError("Title size must be 6-36 pt.")
     if paper not in PAPER_SIZES:
         raise ValueError(f"Unsupported paper size: {paper}. Choose {', '.join(PAPER_SIZES)}.")
     pagesize = PAPER_SIZES[paper]
     width, height = pagesize
-    margin, gap = margin_mm*72/25.4, gap_mm*72/25.4
+    gap = gap_mm*72/25.4
+    top, bottom = top_margin_mm*72/25.4, bottom_margin_mm*72/25.4
+    # A page number needs a little room under the last line, whatever the bottom margin.
+    floor = max(bottom, 6*72/25.4) if page_numbers else bottom
+    line_height = title_size*1.25
     left_margin, right_margin = left_margin_mm*72/25.4, right_margin_mm*72/25.4
     available_width = width-left_margin-right_margin
     rows, _ = print_rows(project,bars_per_line)
@@ -88,11 +99,13 @@ def export_pdf(project, filename, paper="A4", gap_mm=0, margin_mm=12, title=None
             return font
 
         def header():
-            canvas.setFont(font, 12)
+            if not show_title or not title.strip():
+                return height-top
+            canvas.setFont(font, title_size)
             # Wrap long video titles instead of letting them run off the page.
             rows, row, row_width = [], "", 0
             for char in title:
-                char_width = pdfmetrics.stringWidth(char, character_font(char), 12)
+                char_width = pdfmetrics.stringWidth(char, character_font(char), title_size)
                 if row_width+char_width > available_width:
                     rows.append(row)
                     row = ""
@@ -102,31 +115,33 @@ def export_pdf(project, filename, paper="A4", gap_mm=0, margin_mm=12, title=None
             if row:
                 rows.append(row)
             for i, row in enumerate(rows[:3]):
-                text = canvas.beginText(left_margin, height-margin-12-i*15)
+                text = canvas.beginText(left_margin, height-top-title_size-i*line_height)
                 for char in row:
-                    text.setFont(character_font(char), 12)
+                    text.setFont(character_font(char), title_size)
                     text.textOut(char)
                 canvas.drawText(text)
-            return height-margin-max(1, len(rows[:3]))*15-10
+            return height-top-max(1, len(rows[:3]))*line_height-10
 
         def footer():
-            canvas.setFont("Helvetica", 8)
-            canvas.drawCentredString(width/2, margin*.55, str(page))
+            if page_numbers:
+                canvas.setFont("Helvetica", 8)
+                canvas.drawCentredString(width/2, max(floor*.55, 4), str(page))
 
         y = header()
+        reserve = height-y if show_title else 0  # title block on the first page
         for row in rows:
             with row.image as img:
                 draw_width = available_width*row.width_fraction
                 draw_height = img.height*draw_width/img.width*row.height_scale
-                if draw_height > height-margin*2-65:
-                    factor = (height-margin*2-65)/draw_height
+                if draw_height > height-top-floor-reserve:
+                    factor = (height-top-floor-reserve)/draw_height
                     draw_width *= factor
                     draw_height *= factor
-                if y-draw_height < margin:
+                if y-draw_height < floor:
                     footer()
                     canvas.showPage()
                     page += 1
-                    y = height-margin
+                    y = height-top
                 canvas.drawImage(ImageReader(img), left_margin, y-draw_height,
                                  width=draw_width, height=draw_height)
                 y -= draw_height+gap

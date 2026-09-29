@@ -203,6 +203,7 @@ function render() {
   $('ai-usage').hidden = !usage;
   if (usage) $('ai-usage').textContent = `${usage.requests} requests · ${usage.cache_hits} reused · ${usage.input_tokens.toLocaleString()} input / ${usage.output_tokens.toLocaleString()} output tokens · ${usage.subscription ? 'Subscription allowance' : `Estimated $${usage.estimated_usd.toFixed(4)}`}`;
   $('gap').closest('label').hidden = !!state.ai;
+  $('page-fields').hidden = !!state.ai;  // AI scores set title and page numbers in their own page settings
   if (state.aiConnection && state.aiConnection !== connectionResult) {
     connectionResult = state.aiConnection;
     $('ai-connection-note').textContent = state.aiConnection;
@@ -318,7 +319,7 @@ function updateControls() {
     'save-project':!!state?.lines.length, 'export-pdf':!!state?.lines.some(l => l.included),
     'preview-print':!!state?.lines.some(l=>l.included), 'reflow-bars':!!state?.lines.length && ['guitar','bass'].includes(state.notation),
     'bars-per-line':!!state?.barsPerLine,
-    'for-print':true, notation:true,
+    'for-print':true, notation:true, 'top-margin':true, 'bottom-margin':true, 'title-size':true, 'print-title':true, 'page-numbers':true,
     background:!!state?.lines.length,
     'ai-provider':true, 'ai-model':true, 'ai-key':true, 'ai-check':true, 'ai-instructions':true,
     'ai-select-area':loaded,
@@ -571,15 +572,21 @@ listen('preview-print','click',()=>{video.pause();job='print-preview';return com
       previewFocus=null;
     }
 }
-listen('export-pdf','click', () => { video.pause(); job = 'export'; return command('export', {title:$('pdf-title').value, paper:$('paper').value,
-  gap:$('gap').value, left:$('left-margin').value, right:$('right-margin').value, aiLayout:state.ai ? aiPageSettings() : null}); });
+listen('export-pdf','click', () => {
+  for (const id of ['top-margin','bottom-margin','title-size']) if (!state.ai && !$(id).reportValidity()) return;
+  video.pause(); job = 'export';
+  return command('export', {title:$('pdf-title').value, paper:$('paper').value,
+    gap:$('gap').value, left:$('left-margin').value, right:$('right-margin').value,
+    top:$('top-margin').value, bottom:$('bottom-margin').value, titleSize:$('title-size').value,
+    showTitle:$('print-title').checked, pageNumbers:$('page-numbers').checked,
+    aiLayout:state.ai ? aiPageSettings() : null});
+});
 listen('edit-line','click', () => {
   editorIndex = selected;
   const line = state.lines[selected];
   $('line-height').value=String(Math.round((line.height_scale || 1)*100));
   $('all-line-heights').checked=false;
   $('editor-title').textContent = `Edit line ${String(selected+1).padStart(2,'0')}`;
-  $('editor-hint').textContent = line.source_path ? 'Drag the corners to crop or expand into the original frame. Drag inside to move the selection.' : 'This older project contains only the captured image. Crop it here; expansion is limited to its original edges.';
   $('editor-image').src = imageUrl(selected,'source');
   editorCrop.set(line.crop || [0,0,1,1]);
   $('editor').showModal();

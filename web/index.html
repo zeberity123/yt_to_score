@@ -125,6 +125,7 @@
           </div>
           <p id="reflow-help" class="help">Uncertain lines stay intact. Short final lines keep the same notation size.</p>
           <div class="export-bottom">
+            <div class="pdf-field-rows">
             <div class="pdf-fields">
               <label>Paper<select id="paper">
                 <option value="A4" title="210 × 297 mm">A4</option>
@@ -141,6 +142,14 @@
               <label>Right <small>mm</small><input id="right-margin" type="number" value="3" min="0" max="40" step="0.1"></label>
               <button id="for-print" title="Set line gap to 0 mm and left/right margins to 12 mm">For print</button>
             </div>
+            <div class="pdf-fields" id="page-fields">
+              <label>Top <small>mm</small><input id="top-margin" type="number" value="12" min="0" max="40" step="0.5"></label>
+              <label>Bottom <small>mm</small><input id="bottom-margin" type="number" value="12" min="0" max="40" step="0.5"></label>
+              <label>Title size <small>pt</small><input id="title-size" type="number" value="12" min="6" max="36" step="1"></label>
+              <label class="check-row"><input id="print-title" type="checkbox" checked><span>Print title</span></label>
+              <label class="check-row"><input id="page-numbers" type="checkbox" checked><span>Page numbers</span></label>
+            </div>
+            </div>
             <div class="export-actions"><button id="save-project">Save project <span aria-hidden="true">↗</span></button><button id="export-pdf" class="primary">Export PDF <span aria-hidden="true">↓</span></button></div>
           </div>
         </section>
@@ -149,7 +158,7 @@
   </main>
   <footer class="status-bar"><span id="status-dot" class="status-dot"></span><span id="status" role="status">Connecting to your workspace…</span><progress id="progress" max="1" value="0" hidden></progress><button id="pause-ai" class="text-button" hidden>Pause</button><button id="cancel" class="text-button" hidden>Cancel</button><span id="elapsed-time" hidden></span></footer>
   <div id="error" class="error-toast" role="alert" hidden><span id="error-text"></span><button id="dismiss-error" aria-label="Dismiss error">×</button></div>
-  <dialog id="editor" aria-labelledby="editor-title"><div class="dialog-header"><div><h2 id="editor-title">Edit line crop</h2></div><button id="close-editor" class="icon-button" aria-label="Close crop editor">×</button></div><p id="editor-hint" class="help">Drag the corners to crop or expand into the original frame. Drag inside to move the selection.</p><div id="editor-stage" class="editor-stage"><div id="editor-fit" class="media-fit"><img id="editor-image" alt="Original capture with editable crop"><div id="editor-crop" class="crop-overlay"><div class="crop-box"><i data-handle="nw"></i><i data-handle="ne"></i><i data-handle="sw"></i><i data-handle="se"></i></div></div></div></div><div class="crop-fields"><label>Left <small>%</small><input id="crop-left" type="number" min="0" max="100" step="0.1"></label><label>Top <small>%</small><input id="crop-top" type="number" min="0" max="100" step="0.1"></label><label>Right <small>%</small><input id="crop-right" type="number" min="0" max="100" step="0.1"></label><label>Bottom <small>%</small><input id="crop-bottom" type="number" min="0" max="100" step="0.1"></label></div><div class="ratio-controls"><label class="field-label" for="line-height">Line height (%)<input id="line-height" type="number" value="100" min="25" max="200" step="5"></label><label class="check-row"><input id="all-line-heights" type="checkbox"><span>Apply height to all lines</span></label><span class="help">100% is original. Lower values flatten stretched notation.</span></div><div class="edited-preview"><canvas id="edited-line-preview" aria-label="Edited line preview"></canvas></div><div class="dialog-actions"><button id="reset-line">Restore original</button><div class="button-row"><button id="cancel-edit">Cancel</button><button id="apply-edit" class="primary">Apply crop →</button></div></div></dialog>
+  <dialog id="editor" aria-labelledby="editor-title"><div class="dialog-header"><div><h2 id="editor-title">Edit line crop</h2></div><button id="close-editor" class="icon-button" aria-label="Close crop editor">×</button></div><div id="editor-stage" class="editor-stage"><div id="editor-fit" class="media-fit"><img id="editor-image" alt="Original capture with editable crop"><div id="editor-crop" class="crop-overlay"><div class="crop-box"><i data-handle="nw"></i><i data-handle="ne"></i><i data-handle="sw"></i><i data-handle="se"></i></div></div></div></div><div class="crop-fields"><label>Left <small>%</small><input id="crop-left" type="number" min="0" max="100" step="0.1"></label><label>Top <small>%</small><input id="crop-top" type="number" min="0" max="100" step="0.1"></label><label>Right <small>%</small><input id="crop-right" type="number" min="0" max="100" step="0.1"></label><label>Bottom <small>%</small><input id="crop-bottom" type="number" min="0" max="100" step="0.1"></label><label>Line height <small>%</small><input id="line-height" type="number" value="100" min="25" max="200" step="5"></label><label class="check-row"><input id="all-line-heights" type="checkbox"><span>Apply height to all lines</span></label></div><div class="edited-preview"><canvas id="edited-line-preview" aria-label="Edited line preview"></canvas></div><div class="dialog-actions"><button id="reset-line">Restore original</button><div class="button-row"><button id="cancel-edit">Cancel</button><button id="apply-edit" class="primary">Apply crop →</button></div></div></dialog>
   <input id="video-file" type="file" accept="video/*,.mkv,.avi" hidden><input id="project-file" type="file" accept=".drumscore,.aiscore.json" hidden>
   <dialog id="print-preview" aria-labelledby="print-preview-title"><div class="dialog-header"><h2 id="print-preview-title">Print lines</h2><button id="close-print-preview" aria-label="Close print preview">×</button></div><p id="print-preview-summary" class="help"></p><div id="print-preview-notes" class="help"></div><div id="print-preview-rows"></div></dialog>
 </body>

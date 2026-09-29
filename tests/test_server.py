@@ -67,6 +67,27 @@ def test_capture_modes_and_open_routing(server, tmp_path):
         workspace.command('extract', {'notation': 'staff'})
 
 
+def test_export_passes_page_fit_settings_to_the_image_exporter(server):
+    from unittest.mock import patch
+    workspace = server.workspace
+    project = new_manual_project(workspace.output, 'Fit', '', Region())
+    append_line(project, np.full((80, 160, 3), 255, np.uint8), Region(), 0)
+    workspace.projects['manual'] = project
+    workspace.mode = 'manual'
+    calls = []
+    def fake(project, destination, **options):
+        calls.append(options)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b'%PDF-fake')
+        return 1
+    with patch('drumscore.server.export_pdf', fake):
+        workspace.command('export', {'title': 'Fit', 'paper': 'A5', 'gap': '1', 'left': '4', 'right': '5',
+                                     'top': '6', 'bottom': '0', 'titleSize': '18', 'showTitle': False, 'pageNumbers': False})
+        settle(workspace)
+    assert calls == [dict(paper='A5', gap_mm=1., left_margin_mm=4., right_margin_mm=5., top_margin_mm=6., bottom_margin_mm=0.,
+                          title_size=18., show_title=False, page_numbers=False)]
+
+
 def test_extract_action_maps_chord_to_text_capture(server, tmp_path):
     from unittest.mock import patch
     workspace = server.workspace

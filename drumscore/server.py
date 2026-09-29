@@ -537,13 +537,16 @@ class Workspace:
                                 archive_project(project, destination)
                             else:
                                 project.save()
-                                exporter = export_pdf
+                                page = dict(paper=data.get('paper', 'A4'), gap_mm=float(data.get('gap', 0)),
+                                            left_margin_mm=float(data.get('left', 3)), right_margin_mm=float(data.get('right', 3)))
                                 if project.ai_score:
                                     from .ai_workspace import export_ai
-                                    exporter = export_ai
-                                exporter(project, destination, paper=data.get('paper', 'A4'),
-                                           gap_mm=float(data.get('gap', 0)), left_margin_mm=float(data.get('left', 3)),
-                                           right_margin_mm=float(data.get('right', 3)))
+                                    export_ai(project, destination, **page)
+                                else:
+                                    export_pdf(project, destination, **page,
+                                               top_margin_mm=float(data.get('top', 12)), bottom_margin_mm=float(data.get('bottom', 12)),
+                                               title_size=float(data.get('titleSize', 12)),
+                                               show_title=bool(data.get('showTitle', True)), page_numbers=bool(data.get('pageNumbers', True)))
                         except Exception:
                             destination.unlink(missing_ok=True)
                             if destination.parent.is_dir() and not any(destination.parent.iterdir()):

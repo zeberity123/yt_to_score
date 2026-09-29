@@ -212,6 +212,34 @@ def test_pdf_title_preserves_mixed_korean_and_japanese(tmp_path):
         assert pdf.metadata['title'] == title
 
 
+def test_pdf_page_fit_options(tmp_path):
+    Image.fromarray(score()).save(tmp_path/'line.png')
+    project = Extraction(tmp_path, 'Fit check', '', Region(), [ScoreLine('line.png', i, i) for i in range(15)], [])
+    default = export_pdf(project, tmp_path/'default.pdf')
+    with pymupdf.open(tmp_path/'default.pdf') as pdf:
+        assert 'Fit check' in pdf[0].get_text() and '1' in pdf[0].get_text()
+        first = pdf[0].get_image_info()[0]['bbox']
+        assert first[1] > 12*72/25.4+12  # below the top margin and the title
+    tight = export_pdf(project, tmp_path/'tight.pdf', top_margin_mm=0, bottom_margin_mm=0, show_title=False, page_numbers=False)
+    assert tight < default
+    with pymupdf.open(tmp_path/'tight.pdf') as pdf:
+        assert pdf[0].get_text().strip() == ''  # no title, no page number
+        assert pdf[0].get_image_info()[0]['bbox'][1] == pytest.approx(0, abs=.5)
+        assert sum(len(page.get_image_info()) for page in pdf) == 15
+    export_pdf(project, tmp_path/'big.pdf', title_size=30, page_numbers=False)
+    with pymupdf.open(tmp_path/'big.pdf') as pdf:
+        title = next(block for block in pdf[0].get_text('dict')['blocks'] if block.get('lines'))
+        assert title['lines'][0]['spans'][0]['size'] == pytest.approx(30)
+        assert '1' not in pdf[0].get_text().replace('Fit check', '')
+    export_pdf(project, tmp_path/'numbered.pdf', bottom_margin_mm=0)  # page numbers keep a little room
+    with pymupdf.open(tmp_path/'numbered.pdf') as pdf:
+        assert '1' in pdf[0].get_text()
+    with pytest.raises(ValueError, match='Top and bottom'):
+        export_pdf(project, tmp_path/'bad.pdf', top_margin_mm=41)
+    with pytest.raises(ValueError, match='Title size'):
+        export_pdf(project, tmp_path/'bad.pdf', title_size=4)
+
+
 @pytest.mark.parametrize('paper', ['A4', 'Letter'])
 @pytest.mark.parametrize('margins', [{}, {'left_margin_mm': 0, 'right_margin_mm': 0},
                                   {'left_margin_mm': 3, 'right_margin_mm': 18}])

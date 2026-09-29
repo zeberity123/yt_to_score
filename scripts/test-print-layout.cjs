@@ -25,7 +25,7 @@ const root=path.resolve(__dirname,'..');
     await page.locator('#edit-line').click();
     await page.waitForFunction(()=>document.querySelector('#editor-image').naturalWidth>0);
     await page.locator('#line-height').fill('75');
-    assert.ok(await page.locator('#editor .crop-fields input, #line-height').evaluateAll(inputs=>inputs.every(input=>parseFloat(getComputedStyle(input).marginTop)>=12)));
+    assert.ok(await page.locator('#editor .crop-fields input[type=number], #line-height').evaluateAll(inputs=>inputs.every(input=>parseFloat(getComputedStyle(input).marginTop)>=12)));
     await page.locator('#all-line-heights').check();
     await page.screenshot({path:path.join(root,'diagnostics','print-ratio-editor.png')});
     await page.locator('#apply-edit').click();

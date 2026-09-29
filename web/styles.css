@@ -61,13 +61,22 @@ dialog{border:1px solid #dae1d0;border-radius:18px;background:var(--paper);color
 .print-layout-controls .field-label{display:flex;gap:10px;align-items:center}
 .print-layout-controls input[type=number]{width:72px}
 .print-layout-controls button{margin-left:auto}
-.ratio-controls{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:12px}
-.ratio-controls .field-label,.ratio-controls .check-row{margin:0}
-.ratio-controls .field-label{max-width:120px}
-.ratio-controls .help{max-width:230px}
-#editor .editor-stage{height:min(30dvh,340px)}
-.edited-preview{display:flex;justify-content:center;align-items:center;min-height:65px;max-height:120px;overflow:auto;margin:14px 0;background:#10201e;border-radius:8px;padding:8px}
-.edited-preview canvas{max-width:100%;height:auto;background:white}
+/* The crop editor fills the viewport: the source frame takes every spare pixel, and the
+   preview strip has a fixed height so a taller or shorter crop never shifts the frame under the cursor. */
+#editor[open]{height:calc(100dvh - 36px);display:flex;flex-direction:column;box-sizing:border-box}
+#editor .dialog-header,#editor .crop-fields,#editor .edited-preview,#editor .dialog-actions{flex:none}
+#editor .editor-stage{flex:1 1 0;min-height:160px;height:auto}
+#editor .crop-fields{flex-wrap:wrap;align-items:flex-end;gap:12px;margin-top:10px}
+#editor .crop-fields label{flex:1 1 92px;min-width:84px}
+#editor .crop-fields .check-row{display:flex;flex:1 1 180px;align-items:center;gap:8px;margin:0 0 9px;font-size:11px;color:var(--ink)}
+#editor .crop-fields .check-row input{margin:0;width:auto}
+#editor .dialog-actions{margin-top:12px}
+.edited-preview{display:flex;justify-content:center;align-items:center;height:96px;overflow:hidden;margin:10px 0 0;background:#10201e;border-radius:8px;padding:8px;box-sizing:border-box}
+.edited-preview canvas{max-width:100%;max-height:100%;width:auto;height:auto;background:white}
+.pdf-field-rows{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1}
+#page-fields label:first-child{width:75px}
+#page-fields .check-row{display:flex;width:auto;align-items:center;gap:6px;margin:0;padding-bottom:10px;font-size:11px;color:var(--ink)}
+#page-fields .check-row input{margin:0;width:auto}
 #line-stage>img{object-fit:fill;flex:none}
 #print-preview{width:min(1100px,calc(100vw - 28px));max-height:90dvh;overflow:auto}
 #print-preview-rows{background:white;color:#333;padding:18px;margin-top:16px;display:flex;flex-direction:column;gap:18px}
@@ -75,12 +84,12 @@ dialog{border:1px solid #dae1d0;border-radius:18px;background:var(--paper);color
 #print-preview-rows span{display:block;font-size:10px;color:#666;margin-bottom:5px}
 #print-preview-rows img{display:block;height:auto;max-width:100%}
 #print-preview-notes:empty{display:none}
-#editor .crop-fields input,#editor .ratio-controls .field-label input{margin-top:14px}
+#editor .crop-fields input[type=number]{margin-top:14px}
 .print-row-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
 .print-row-header label{display:flex;align-items:center;gap:10px}
 #print-preview-rows .print-row-header span{font-size:12px;margin:0;color:#505858}
 .print-row-header select{width:auto;min-width:110px;min-height:36px;background:#f4f7f6;color:#203c36;border:1px solid #aabbb6;padding:6px 10px}
-@media(max-width:760px){.print-layout-controls{gap:12px}.print-layout-controls button{width:100%;margin:0}.ratio-controls{gap:12px}.ratio-controls .help{max-width:100%}#editor .editor-stage{height:28dvh}.edited-preview{max-height:120px}}
+@media(max-width:760px){.print-layout-controls{gap:12px}.print-layout-controls button{width:100%;margin:0}#editor[open]{height:calc(100dvh - 20px)}#editor .editor-stage{min-height:120px}#editor .crop-fields{gap:8px}.edited-preview{height:72px}}
 /* Integrated AI capture and page formatting. */
 .ai-step { margin: 18px 0; }
 .ai-step h3 { font-size: 13px; font-weight: 650; margin: 0 0 10px; }
