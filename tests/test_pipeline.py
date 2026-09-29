@@ -63,6 +63,22 @@ def test_single_changed_note_on_a_large_page_is_not_merged():
     assert difference(signature(clean_score(a)), signature(clean_score(b))) > .035
 
 
+def test_automatic_capture_keeps_source_colors_for_original_mode(tmp_path):
+    from drumscore.background import line_image
+    video=tmp_path/'colors.avi'
+    frame=score()
+    frame[45:65,310:340]=(190,215,255)
+    make_video(video,[frame])
+    project=extract(video,tmp_path,region=Region(),interval=.25)
+    line=project.lines[0]
+    assert line.raw_source_path
+    cleaned=np.array(line_image(project,line,'white'))
+    original=np.array(line_image(project,line,'original'))
+    assert original.shape==cleaned.shape
+    assert np.count_nonzero(original.max(axis=2).astype(int)-original.min(axis=2)>25)>100
+    assert np.count_nonzero(cleaned.max(axis=2).astype(int)-cleaned.min(axis=2)>25)==0
+
+
 def test_overlapping_pages_keep_each_line_once_and_can_be_disabled(tmp_path):
     a, b, c = score(150), score(400), score(620)
     path = tmp_path/'pages.avi'

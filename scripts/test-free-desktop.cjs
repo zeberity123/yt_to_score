@@ -16,12 +16,14 @@ const root = path.resolve(__dirname, '..');
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   try {
-    await page.waitForFunction(() => !document.querySelector('#free').disabled);
+    await page.waitForFunction(() => !document.querySelector('#automatic').disabled);
     await page.locator('#language').selectOption('en');
-    await page.locator('#free').click();
-    await page.waitForFunction(() => document.querySelector('#free').getAttribute('aria-pressed') === 'true');
-    assert.equal(await page.locator('#free').getAttribute('aria-pressed'), 'true');
-    assert.equal(await page.locator('#notation-controls').isVisible(), false);
+    await page.locator('#automatic').click();
+    await page.locator('#notation').selectOption('chord');
+    await page.waitForFunction(() => document.querySelector('#automatic').getAttribute('aria-pressed') === 'true' && document.querySelector('#extract').textContent.includes('Extract text lines'));
+    assert.equal(await page.locator('#free').count(), 0);
+    assert.equal(await page.locator('#ai-controls').isVisible(), false);
+    assert.equal(await page.locator('#free-help').isVisible(), true);
     assert.equal(await page.locator('#extract').textContent(), 'Extract text lines →');
     await page.locator('#source').fill(path.join(root, 'diagnostics/free-fixture.avi'));
     await page.locator('#load-video').click();
@@ -65,20 +67,18 @@ const root = path.resolve(__dirname, '..');
     await page.waitForFunction(() => document.querySelector('#manual').getAttribute('aria-pressed') === 'true');
     assert.equal(await page.locator('.line-item').count(), 0);
     await page.locator('#automatic').click();
-    await page.waitForFunction(() => document.querySelector('#automatic').getAttribute('aria-pressed') === 'true');
-    assert.equal(await page.locator('#notation-controls').isVisible(), true);
-    await page.locator('#free').click();
-    await page.waitForFunction(() => document.querySelectorAll('.line-item').length === 5);
+    await page.waitForFunction(() => document.querySelector('#automatic').getAttribute('aria-pressed') === 'true' && document.querySelectorAll('.line-item').length === 5);
+    assert.equal(await page.locator('#auto-controls').isVisible(), true);
     assert.equal(await page.locator('.line-item').count(), 5);
-    for (const [language,label,extract] of [['ko','코드/가사','텍스트 줄 추출'],['ja','コード/歌詞','テキスト行を抽出'],['en','Chord','Extract text lines']]) {
+    for (const [language,label,extract] of [['ko','자동','텍스트 줄 추출'],['ja','自動','テキスト行を抽出'],['en','Automatic','Extract text lines']]) {
       await page.locator('#language').selectOption(language);
-      await page.waitForFunction(label => document.querySelector('#free').textContent === label, label);
+      await page.waitForFunction(label => document.querySelector('#automatic').textContent === label, label);
       await page.waitForFunction(label => document.querySelector('#extract').textContent.includes(label), extract);
     }
     for (const width of [1280,390]) {
       await page.setViewportSize({width,height:844});
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-      const boxes = await Promise.all(['automatic','manual','free'].map(id => page.locator(`#${id}`).boundingBox()));
+      const boxes = await Promise.all(['automatic','ai','manual'].map(id => page.locator(`#${id}`).boundingBox()));
       assert.ok(boxes.every(box => box && box.width > 40));
     }
     await page.screenshot({path:path.join(root,'diagnostics/free-mobile.png')});

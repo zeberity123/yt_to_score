@@ -1,11 +1,21 @@
 # Video Sheet to PDF
 
-A Windows Electron app that turns the **sheet music already visible in a YouTube video** into a printable PDF. Its responsive web interface connects to a local Python processing engine. It captures and arranges the score images; it does not transcribe the audio or produce editable MusicXML.
+A Windows Electron app that turns the **sheet music already visible in a YouTube video** into a printable PDF. Automatic mode captures the score images from stable frames; AI mode either keeps those images and checks them with an AI, or reads the frames and engraves new notation; Manual mode captures the frames you pick. It does not transcribe music from audio alone.
 
 The workspace uses a charcoal and teal studio theme, with white score previews
 and print output. Capture, review, crop editing, and phone layouts share the same controls.
 
 ## Start
+
+Version 0.17.0 offers **Automatic**, **AI** and **Manual** capture; see
+[the release notes](docs/RELEASE-0.17.0.md). The portable build is
+`Video-Sheet-to-PDF-AI-0.17.0-win-x64.exe` on the
+[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.17.0). See the
+[integrated AI guide](docs/AI-INTEGRATED.md) for subscription/API connections, the
+AI method choice (keep video images with an AI check, or re-engrave), instrument
+selection, source row breaks, additional instructions, the AI edit box, and editable
+PDF titles, song information and footers. Chords & lyrics is an instrument option in
+every mode. The Automatic workflow below is the frame-capture extractor.
 
 For Windows x64, download `Video-Sheet-to-PDF-0.11.0-win-x64.exe` from the
 [GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.11.0)
@@ -25,7 +35,7 @@ If dependencies are already installed in this workspace, you can go straight to 
 2. Click **Load video**. The green rectangle marks the detected score area.
 3. Check the preview. Drag a rectangle to adjust the crop if needed. The time slider updates the displayed frame immediately. Include tempo markings, section letters, and symbols above/below the staff.
 4. In **Automatic** mode, click **Extract score lines** in the right sidebar of **Capture**. The video and timeline occupy the left side. Expand **Extraction settings** for sampling, change threshold, and start/end options. The controls column keeps its width when switching modes.
-5. In **Review & export**, select lines to inspect them. **Exclude line** removes a line from the list and PDF; **Undo** restores it. Move a selected line up/down, or click **Edit crop** to crop or expand it.
+5. In **Review & export**, select lines to inspect them. **Exclude line** removes a line from the list and PDF; **Undo** restores it. **Duplicate** inserts a copy immediately after the selected line, preserving its crop and height. Edit and move the copy independently. Move a selected line up/down, or click **Edit crop** to crop or expand it.
 6. Set the PDF title, paper size, line gap, and left/right margins, then click **Export PDF**.
 
 The default line gap is 0 mm, with 3 mm left and right margins. **For print** sets the gap to 0 mm and both side margins to 12 mm (1.2 cm). Images retain their aspect ratio and lines never split across PDF pages. **Export PDF** opens a desktop save dialog; the browser version downloads the PDF. **Save project** creates a portable `.drumscore` file using the **PDF & project title**, including original source images and edits.
@@ -56,13 +66,28 @@ Drums, Bass and Piano also tolerate small panel nudges when barlines confirm tha
 
 Standalone four-string Bass TAB uses finer fret comparison and masks highlighted string fragments. Confident horizontal overlaps join at common barlines, with full panels retained for **Edit crop**. Combined bass notation and Piano use complete-system matching instead of partial-measure joins. All modes work best with stationary panels that advance in steps. Reflowed or uncertain overlaps can remain and need **Exclude line** or **Edit crop**. Bass TAB with five or six string rules and piano layouts with more than two staves per system currently need manual capture.
 
+For moving four-string Bass TAB in white over footage, Automatic mode also checks
+for consecutive bar numbers. When those numbers can be followed reliably, it
+examines scrolling positions at video frame rate, chooses clearer portions of
+each numbered bar, and joins the recovered bars four at a time. This can take
+longer than ordinary extraction. Review notes identify unrecovered numbers and
+bars whose background is still too bright. Music hidden in every source frame
+cannot be restored. Recovered strips can be cropped and reset, but cannot expand
+beyond their assembled images. Turning off page-overlap removal uses ordinary
+capture instead. Numbering resets and uncertain numbering retain the ordinary
+extraction path so intentional returns are not globally removed.
+
+An identical line held on screen for two musical repetitions has no visual
+boundary for automatic capture. Use **Duplicate**, then move the copy if needed;
+the extractor does not guess repetition counts from screen duration.
+
 Left and right margins can each be set from 0 to 40 mm, including decimal values. Smaller margins enlarge the score lines to fill the available width; top and bottom margins stay at 12 mm. White space inside a captured image is controlled by the score-area crop. Choose side margins that fit your printer's printable area.
 
-## Chord mode (chords and lyrics)
+## Chords and lyrics
 
-Choose **Chord** for outlined blue chord names and white lyrics over video.
-Draw a rectangle around the text, just as in Manual mode, then click
-**Extract text lines**. No staff or TAB rules are required. The detector finds
+In **Automatic** mode choose the **Chords & lyrics** instrument for outlined blue
+chord names and white lyrics over video. Draw a rectangle around the text, just as
+in Manual mode, then click **Extract text lines**. No staff or TAB rules are required. The detector finds
 the rows present in each stable view, including one or two chord-only rows.
 Moving footage is excluded from the text comparison; saved crops keep the
 horizontal chord/lyric alignment. **Background cleanup** defaults to **White**;
@@ -78,8 +103,8 @@ panel (approximately y=300–745 in the 1920×1080 video), excluding **Capo4**.
 The small chord diagram can overlap the selected text area. Background cleanup
 removes the footage around the detected text; review the crops before exporting.
 
-Chord captures have their own list, separate from Automatic and Manual, and
-saved projects reopen in Chord mode. Review, crop expansion, undo, and PDF
+Chord captures use the Automatic list, and saved projects reopen in Automatic
+mode with the Chords & lyrics instrument. Review, crop expansion, undo, and PDF
 export work as usual. Matching rows at consecutive page boundaries are
 removed; later repeated passages remain. This is image capture, not OCR or
 editable chord transcription. Unoutlined text, karaoke animation, and

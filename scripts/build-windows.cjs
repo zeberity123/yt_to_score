@@ -20,6 +20,7 @@ run(python, ['-m','PyInstaller','--noconfirm','--clean','--onedir','--console',
   '--name','score-backend','--distpath','build/backend','--workpath','build/pyinstaller','--specpath','build',
   '--paths',root,'--add-data',`${path.join(root,'web')};web`,'--collect-all','imageio_ffmpeg',
   '--collect-all','yt_dlp','--collect-all','yt_dlp_ejs',
+  '--collect-all','verovio','--collect-all','pypdfium2',
   '--exclude-module','tkinter','--exclude-module','pytest','--exclude-module','pymupdf',
   '--exclude-module','IPython','desktop/backend_entry.py']);
 run(process.execPath, ['node_modules/electron-builder/cli.js','--win','portable','--x64','--publish','never'], {

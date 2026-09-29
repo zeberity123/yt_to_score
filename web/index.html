@@ -26,20 +26,50 @@
           <p id="source-note" class="help">YouTube · MP4 · MOV · MKV · WebM · AVI</p>
         </section>
         <section class="control-section"><div class="section-heading"><h2>Capture settings</h2><span class="step-dot">2</span></div>
-          <div class="segmented" aria-label="Capture mode"><button id="automatic" aria-pressed="true">Automatic</button><button id="manual" aria-pressed="false">Manual</button><button id="free" aria-pressed="false">Chord</button></div>
+          <div class="segmented" aria-label="Capture mode"><button id="automatic" aria-pressed="true">Automatic</button><button id="ai" aria-pressed="false">AI</button><button id="manual" aria-pressed="false">Manual</button></div>
+          <div id="instrument-controls"><label class="field-label" for="notation">Instrument</label><select id="notation"><option value="staff">Drums</option><option value="guitar">Guitar TAB</option><option value="bass">Bass TAB</option><option value="piano">Piano</option><option value="chord">Chords &amp; lyrics</option></select></div>
           <div id="auto-controls">
-            <div id="notation-controls">
-            <label class="field-label" for="notation">Notation</label><select id="notation"><option value="staff">Drums</option><option value="guitar">Guitar TAB (6 strings)</option><option value="bass">Bass</option><option value="piano">Piano</option></select>
             <label class="field-label" for="layout">Score layout</label><div class="button-row"><select id="layout"><option value="auto">Auto detect</option><option value="bottom">Bottom strip</option><option value="page">Full page</option></select><button id="detect" title="Detect the score crop in this frame">Detect area</button></div>
-            </div>
             <p id="free-help" class="help" hidden>Draw around the outlined blue chords and white lyrics. Chord detects each text row, including chord-only rows. Keep capo labels and the bottom score outside the rectangle.</p>
-            <details id="advanced"><summary role="button" aria-expanded="false">Extraction settings <svg class="settings-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m5 7 5 5 5-5"/></svg></summary><div class="field-grid"><label>Sample every (s)<input id="interval" type="number" value="0.5" min="0.05" step="0.05"></label><label>Change threshold<input id="threshold" type="number" value="0.035" min="0.001" max="0.99" step="0.005"></label><label>Start (s)<input id="start" type="number" value="0" min="0"></label><label>End (s)<input id="end" type="number" placeholder="Whole video" min="0"></label></div></details>
+            <div id="auto-capture-settings"><details id="advanced"><summary role="button" aria-expanded="false">Extraction settings <svg class="settings-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m5 7 5 5 5-5"/></svg></summary><div class="field-grid"><label>Sample every (s)<input id="interval" type="number" value="0.5" min="0.05" step="0.05"></label><label>Change threshold<input id="threshold" type="number" value="0.035" min="0.001" max="0.99" step="0.005"></label><label>Start (s)<input id="start" type="number" value="0" min="0"></label><label>End (s)<input id="end" type="number" placeholder="Whole video" min="0"></label></div>
+              <div id="adaptive-controls">
+                <label class="check-row"><input type="checkbox" id="flexible-area"><span>Follow changing score position</span></label>
+                <p class="help">Adjust the area around one system at each sample. Includes paired staffs. Select a starting area around one line; full pages keep the fixed area.</p>
+              </div>
+              <div id="timing-controls">
+                <div class="field-grid"><label>BPM (quarter notes)<input id="bpm" type="number" min="30" max="300" step="0.1" placeholder="Enter or detect"></label><label>Quarter-note beats per bar<input id="beats-per-bar" type="number" min="1" max="16" step="0.5" value="4"></label></div>
+                <button id="detect-tempo" class="full">Detect BPM from audio</button>
+                <p id="tempo-result" class="help" hidden></p>
+                <label class="check-row"><input type="checkbox" id="timing-repeats"><span>Recover identical repeats using timing</span></label>
+                <p class="help">For a steady tempo and one score system at a time, including paired staffs. 4/4 = 4; 3/4 and 6/8 = 3 quarter-note beats. Review inferred repeats; pauses and written repeats can mislead timing.</p>
+              </div>
+            </details></div>
             <button id="extract" class="primary full">Extract score lines <span aria-hidden="true">→</span></button>
+          </div>
+          <div id="ai-controls" hidden>
+            <div class="ai-step"><h3>1. AI connection</h3>
+              <label class="field-label" for="ai-provider">Connection</label><select id="ai-provider"><option value="Codex">Codex (subscription)</option><option value="Claude CLI">Claude Code (subscription)</option><option value="OpenAI">OpenAI (API)</option><option value="DeepSeek">DeepSeek (API)</option><option value="Anthropic">Anthropic (API)</option></select>
+              <label class="field-label" for="ai-model">Model</label><select id="ai-model"></select>
+              <div id="ai-key-field" hidden><label class="field-label" for="ai-key">API key</label><input id="ai-key" type="password" autocomplete="off" spellcheck="false" placeholder="Kept in memory only"></div>
+              <button id="ai-check" class="full">Check connection</button><p id="ai-connection-note" class="help">Uses your signed-in Codex CLI and subscription allowance.</p>
+            </div>
+            <div id="notation-controls" class="ai-step"><h3>2. Method, rows &amp; score area</h3>
+              <label class="field-label" for="ai-method">Method</label><select id="ai-method"><option value="images">Keep video images + AI check</option><option value="notation">Re-engrave notation with AI</option></select>
+              <p id="ai-method-note" class="help">Keeps the original score images. The AI only finds the score, checks bar order and flags duplicates or broken lines — minutes, and light on your allowance.</p>
+              <div id="ai-capture-settings"></div>
+              <div id="ai-bars-control" class="ai-bars-control"><button id="ai-override-bars" type="button" aria-pressed="false">Override bars per line: OFF</button><input id="ai-bars" aria-label="Bars per line" type="number" min="1" max="16" value="4" disabled></div>
+              <p id="ai-bars-note" class="help">Off: follow the video's original row breaks. Uncertain breaks are reported for review.</p>
+              <label class="check-row"><input id="ai-select-area" type="checkbox"><span>Select score area</span></label>
+              <p class="help">Optional: drag around the score to exclude the performance video. Include bar numbers, annotations and all staves throughout the song. Off: find the area automatically.</p>
+            </div>
+            <div id="ai-instructions-step" class="ai-step"><h3>3. Additional instructions</h3><label class="sr-only" for="ai-instructions">Additional instructions</label><textarea id="ai-instructions" rows="4"></textarea></div>
+            <button id="ai-extract" class="primary full">4. Extract with AI <span aria-hidden="true">&#8599;</span></button>
+            <p id="ai-usage" class="help" hidden></p>
           </div>
           <div id="manual-controls" hidden><button id="add-line" class="primary full">+ Add line <span id="manual-count">0</span></button><button id="review-lines" class="text-button full">Review captured lines →</button></div>
         </section>
         <section class="control-section last" aria-label="Playback">
-          <div class="section-heading"><h2>Playback</h2><span class="step-dot">3</span></div>
+          <div class="section-heading"><h2>Playback</h2></div>
           <div class="button-row"><button id="play">▶ Play</button><select id="speed" aria-label="Playback speed"><option value="0.5">0.5× speed</option><option value="1" selected>1× speed</option><option value="1.5">1.5× speed</option><option value="2">2× speed</option><option value="2.5">2.5× speed</option><option value="3">3× speed</option></select></div>
           <div class="volume-heading"><label for="volume">Volume</label><output id="volume-value" for="volume">70%</output></div>
           <div class="volume-controls"><button id="mute" aria-pressed="false" aria-label="Mute audio">Mute</button><input id="volume" type="range" min="0" max="100" step="1" value="70" aria-label="Volume"></div>
@@ -49,7 +79,7 @@
       </aside>
       <div class="video-workspace">
         <div id="video-stage" class="video-stage">
-          <div id="video-empty" class="empty-state"><div class="staff-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><b>♪</b></div><h2>Load a video</h2><p>Paste a YouTube link or choose a file.<br>Then draw around the sheet music to capture.</p></div>
+          <div id="video-empty" class="empty-state"><div class="staff-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><b>♪</b></div><h2>Load a video</h2><p>Paste a YouTube link or choose a file.<br>Then choose Automatic, AI, or Manual capture.</p></div>
           <div id="video-loading" class="empty-state video-loading" role="status" aria-live="polite" hidden><div class="loading-spinner" aria-hidden="true"></div><h2>Loading video…</h2></div>
           <div id="video-fit" class="media-fit" hidden><video id="video" playsinline preload="metadata"></video><div id="video-crop" class="crop-overlay" aria-label="Drag to select score area"><div class="crop-box"><span class="crop-label">SCORE AREA</span><i data-handle="nw"></i><i data-handle="ne"></i><i data-handle="sw"></i><i data-handle="se"></i></div></div></div>
         </div>
@@ -61,7 +91,7 @@
       <div class="review-main">
         <div class="review-heading"><h1 id="preview-title">Line preview</h1><button id="edit-line">Edit crop <span aria-hidden="true">⌗</span></button></div>
         <div id="line-stage" class="line-stage"><div id="line-empty" class="empty-state"><div class="staff-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><b>♪</b></div><h2>No score lines yet</h2><p>Capture lines or open a saved project.<br>Select a line to inspect, crop, or expand it.</p></div><img id="line-image" alt="Selected score line" hidden></div>
-        <div class="line-actions"><div class="button-row"><button id="include-line">Exclude line</button><button id="undo-line" title="Restore the last removed line">Undo</button><button id="move-up" aria-label="Move selected line up">↑ Move up</button><button id="move-down" aria-label="Move selected line down">↓ Move down</button></div><span id="line-meta" class="help">Exported in the order shown on the left.</span></div>
+        <div class="line-actions"><div class="button-row"><button id="include-line">Exclude line</button><button id="duplicate-line">Duplicate</button><button id="undo-line" title="Restore the last removed line">Undo</button><button id="move-up" aria-label="Move selected line up">↑ Move up</button><button id="move-down" aria-label="Move selected line down">↓ Move down</button><button id="ai-line-transcribe" hidden title="Engrave this captured row as notation with the AI">Re-transcribe with AI</button></div><span id="line-meta" class="help">Exported in the order shown on the left.</span><p id="line-notes" class="help" hidden></p></div>
         <details id="warnings" hidden><summary>Extraction notes</summary><ul id="warning-list"></ul></details>
         <div class="review-playback" aria-label="Review audio">
           <label class="check-row"><input type="checkbox" id="review-audio" checked><span>Audio in review</span></label>
@@ -69,7 +99,25 @@
         </div>
         <section class="export-card" aria-label="PDF settings">
           <label class="field-label" for="pdf-title">PDF & project title</label><input id="pdf-title" value="Sheet music">
-          <div class="background-controls"><label class="field-label" for="background">Background cleanup</label><select id="background"><option value="white">White (default)</option><option value="black">Black</option><option value="original">Off — original capture</option></select><p class="help">Applies to previews and PDF. Original captures stay available for crop editing.</p></div>
+          <div id="ai-page-controls" hidden>
+            <div class="check-row"><label><input id="ai-title-first" type="checkbox" checked> Title on first page only</label><label><input id="ai-page-numbers" type="checkbox" checked> Page numbers</label></div>
+            <label class="field-label" for="ai-subtitle">Subtitle</label><input id="ai-subtitle" placeholder="Optional subtitle">
+            <label class="check-row"><input id="ai-show-info" type="checkbox"><span>Show song information</span></label>
+            <label class="field-label" for="ai-song-info">Song information</label><textarea id="ai-song-info" rows="2" placeholder="For example: 4/4 | Quarter note = 145 | Four-string TAB"></textarea>
+            <label class="field-label" for="ai-footer">Footer</label><textarea id="ai-footer" rows="3" placeholder="Optional technique legend, source, or notes. Leave blank to remove the footer."></textarea>
+            <div class="ai-bars-control"><button id="ai-review-override" type="button" aria-pressed="false">Override bars per line: OFF</button><input id="ai-review-bars" aria-label="AI bars per line" type="number" min="1" max="16" value="4"></div>
+            <label class="check-row"><input id="ai-merge-rests" type="checkbox"><span>Merge consecutive rest bars</span></label>
+            <p class="help">Off: rests print as the video shows them. With the override on, runs of whole-bar rests become one block with a count.</p>
+            <div class="button-row"><button id="ai-apply-layout">Apply page settings</button><button id="ai-preview">Preview PDF</button></div><p class="help">Page settings and PDF previews use the saved music. No AI request is needed.</p>
+          </div>
+          <div id="ai-edit-controls" hidden>
+            <label class="field-label" for="ai-edit-text">AI edit</label>
+            <textarea id="ai-edit-text" rows="3" placeholder="Describe changes: page layout, tempo or rehearsal marks, or bars to re-read from the video."></textarea>
+            <div class="button-row"><button id="ai-edit-apply">Apply with AI</button></div>
+            <p class="help">Sends one short text request through the AI connection chosen in Capture. Re-reading bars also sends a few video frames.</p>
+            <ul id="ai-edit-notes" class="help" hidden></ul>
+          </div>
+          <div class="background-controls"><label class="field-label" for="background">Background cleanup</label><select id="background"><option value="white">White (default)</option><option value="black">Black</option><option value="original">Off — original capture</option></select><p class="help">Applies to previews and PDF. Off shows preserved video colors; assembled bars can contain slices from different frames.</p><p id="original-missing" class="help" hidden>This older project does not contain original video colors for every line. Re-extract the video to use Off on those lines.</p></div>
           <div class="print-layout-controls">
             <label class="check-row" id="reflow-label"><input id="reflow-bars" type="checkbox"><span>Arrange TAB bars</span></label>
             <label class="field-label" id="bars-label">Target bars per line<input id="bars-per-line" type="number" value="6" min="4" max="16" step="1"></label>
@@ -99,10 +147,10 @@
       </div>
     </section>
   </main>
-  <footer class="status-bar"><span id="status-dot" class="status-dot"></span><span id="status" role="status">Connecting to your workspace…</span><progress id="progress" max="1" value="0" hidden></progress><button id="cancel" class="text-button" hidden>Cancel</button></footer>
+  <footer class="status-bar"><span id="status-dot" class="status-dot"></span><span id="status" role="status">Connecting to your workspace…</span><progress id="progress" max="1" value="0" hidden></progress><button id="pause-ai" class="text-button" hidden>Pause</button><button id="cancel" class="text-button" hidden>Cancel</button><span id="elapsed-time" hidden></span></footer>
   <div id="error" class="error-toast" role="alert" hidden><span id="error-text"></span><button id="dismiss-error" aria-label="Dismiss error">×</button></div>
   <dialog id="editor" aria-labelledby="editor-title"><div class="dialog-header"><div><h2 id="editor-title">Edit line crop</h2></div><button id="close-editor" class="icon-button" aria-label="Close crop editor">×</button></div><p id="editor-hint" class="help">Drag the corners to crop or expand into the original frame. Drag inside to move the selection.</p><div id="editor-stage" class="editor-stage"><div id="editor-fit" class="media-fit"><img id="editor-image" alt="Original capture with editable crop"><div id="editor-crop" class="crop-overlay"><div class="crop-box"><i data-handle="nw"></i><i data-handle="ne"></i><i data-handle="sw"></i><i data-handle="se"></i></div></div></div></div><div class="crop-fields"><label>Left <small>%</small><input id="crop-left" type="number" min="0" max="100" step="0.1"></label><label>Top <small>%</small><input id="crop-top" type="number" min="0" max="100" step="0.1"></label><label>Right <small>%</small><input id="crop-right" type="number" min="0" max="100" step="0.1"></label><label>Bottom <small>%</small><input id="crop-bottom" type="number" min="0" max="100" step="0.1"></label></div><div class="ratio-controls"><label class="field-label" for="line-height">Line height (%)<input id="line-height" type="number" value="100" min="25" max="200" step="5"></label><label class="check-row"><input id="all-line-heights" type="checkbox"><span>Apply height to all lines</span></label><span class="help">100% is original. Lower values flatten stretched notation.</span></div><div class="edited-preview"><canvas id="edited-line-preview" aria-label="Edited line preview"></canvas></div><div class="dialog-actions"><button id="reset-line">Restore original</button><div class="button-row"><button id="cancel-edit">Cancel</button><button id="apply-edit" class="primary">Apply crop →</button></div></div></dialog>
-  <input id="video-file" type="file" accept="video/*,.mkv,.avi" hidden><input id="project-file" type="file" accept=".drumscore" hidden>
+  <input id="video-file" type="file" accept="video/*,.mkv,.avi" hidden><input id="project-file" type="file" accept=".drumscore,.aiscore.json" hidden>
   <dialog id="print-preview" aria-labelledby="print-preview-title"><div class="dialog-header"><h2 id="print-preview-title">Print lines</h2><button id="close-print-preview" aria-label="Close print preview">×</button></div><p id="print-preview-summary" class="help"></p><div id="print-preview-notes" class="help"></div><div id="print-preview-rows"></div></dialog>
 </body>
 </html>

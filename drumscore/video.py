@@ -207,10 +207,11 @@ def preview(path, seconds):
         cap.release()
 
 
-def frames(path, interval=.5, start=0, end=None, cancel=None):
+def frames(path, interval=.5, start=0, end=None, cancel=None, *, dense=False):
     width, height, duration = metadata(path)
     end = duration if end is None else min(end, duration)
-    if not .1 <= interval <= 10:
+    minimum = 1/120 if dense else .1
+    if not minimum <= interval <= 10:
         raise ValueError("Sample interval must be between 0.1 and 10 seconds.")
     if not 0 <= start < end:
         raise ValueError("Start time must be before end time and within the video.")

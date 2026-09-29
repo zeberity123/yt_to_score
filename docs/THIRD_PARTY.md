@@ -22,3 +22,13 @@ license and configuration are available with `ffmpeg -L` and `ffmpeg -buildconf`
 The bundled build is GPLv3; its license and build configuration are included in
 `resources/licenses/FFmpeg-GPLv3.txt` and `resources/licenses/FFmpeg-build.txt`.
 The bundled Python package versions are recorded in `resources/licenses/python-packages.txt`.
+
+The separate **AI Score** editions use Python/Tk instead of Electron. They also
+include Verovio, svglib, lxml, tinycss2 and cssselect2. Their license notices are
+in the AI distribution's `licenses` folder and inside the portable executable.
+Verovio is provided as a separate shared library; its corresponding upstream
+source is https://github.com/rism-digital/verovio (release 6.3.0).
+The integrated Electron AI workflow also includes Verovio, svglib and their
+dependencies, plus pypdfium2/PDFium for PDF previews. Notices are collected in
+`resources/licenses`; PDFium source is https://pdfium.googlesource.com/pdfium/.
+Codex CLI and Claude Code are installed separately by the user and are not redistributed.

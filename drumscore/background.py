@@ -4,6 +4,25 @@ import numpy as np
 from PIL import Image
 
 
+def line_image(project, line, background=None):
+    """Render matching geometry from cleaned music or preserved source colors."""
+    from .editing import project_file
+    background = project.background if background is None else background
+    with Image.open(project_file(project,line.path)) as captured:
+        image = captured.convert('RGB')
+    # An AI-engraved replacement row is notation, never the video crop behind it.
+    if background == 'original' and line.raw_source_path and not line.ai_bar_ids:
+        with Image.open(project_file(project,line.raw_source_path)) as source:
+            raw = source.convert('RGB')
+        if line.crop:
+            l,t,r,b = line.crop
+            raw = raw.crop((int(l*raw.width),int(t*raw.height),int(r*raw.width),int(b*raw.height)))
+        if raw.size != image.size:
+            raw = raw.resize(image.size,Image.Resampling.LANCZOS)
+        return raw
+    return render_background(image,project.notation,background)
+
+
 def validate_background(value):
     if value not in ('white', 'black', 'original'):
         raise ValueError('Choose White, Black, or Original background.')

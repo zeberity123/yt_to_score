@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from drumscore.editing import archive_project, edit_line, open_project, safe_name
+from drumscore.editing import archive_project, duplicate_line, edit_line, open_project, safe_name
 from drumscore.extract import Extraction, ScoreLine
 from drumscore.manual import append_line, new_manual_project
 from drumscore.vision import Region
@@ -74,3 +74,35 @@ def test_title_filename_retains_unicode_and_handles_windows_names():
     assert safe_name('연습곡 / Song?') == '연습곡 _ Song_'
     assert safe_name('CON') == '_CON'
     assert safe_name('...') == 'Sheet music'
+
+
+def test_duplicate_preserves_edits_but_crops_and_print_identity_are_independent(tmp_path):
+    from drumscore.print_layout import measure_anchor
+    project = new_manual_project(tmp_path, 'Repeat', '', Region())
+    append_line(project, np.full((80,160,3), 220, np.uint8), Region(), 42)
+    edit_line(project, 0, [.1,.1,.9,.9], height_scale=.75)
+    original = project.lines[0]
+    copied = duplicate_line(project, 0)
+    assert project.lines == [original, copied]
+    assert copied.time == original.time and copied.height_scale == .75
+    assert copied.crop == original.crop and copied.crop is not original.crop
+    assert copied.path != original.path and copied.original_path != original.original_path
+    assert measure_anchor(original,0,50) != measure_anchor(copied,0,50)
+    edit_line(project, 1, [0,0,1,1])
+    assert original.crop == [.1,.1,.9,.9]
+    reopened = open_project(archive_project(project,tmp_path/'repeat.drumscore'),tmp_path/'open')
+    assert len(reopened.lines) == 2
+    edit_line(reopened, 1, reset=True)
+    assert reopened.lines[1].crop == [0,0,1,1]
+
+
+def test_duplicate_rolls_back_when_save_fails(tmp_path, monkeypatch):
+    project = new_manual_project(tmp_path, 'Repeat', '', Region())
+    append_line(project, np.full((40,80,3), 255, np.uint8), Region(), 0)
+    before = set(project.directory.iterdir())
+    def fail():
+        raise OSError('Disk full')
+    monkeypatch.setattr(project, 'save', fail)
+    with pytest.raises(OSError, match='Disk full'):
+        duplicate_line(project, 0)
+    assert len(project.lines) == 1 and set(project.directory.iterdir()) == before

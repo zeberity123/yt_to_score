@@ -13,7 +13,7 @@ with PyInstaller, and packages an Electron portable executable with electron-bui
 It downloads the license for the exact Node.js runtime being bundled if the local
 installation does not contain it. Packaging tools and Electron may require downloads.
 
-The output is `dist/Video-Sheet-to-PDF-0.11.0-win-x64.exe`. The unpacked application
+The output is `dist/Video-Sheet-to-PDF-AI-0.16.4-win-x64.exe`. The unpacked application
 is also available at `dist/win-unpacked/Video Sheet to PDF.exe` for verification.
 The portable application extracts at launch and stores working data under Electron's
 user-data folder (`%APPDATA%/Video Sheet to PDF/output`), outside the temporary app.
@@ -22,11 +22,9 @@ Run the normal UI checks against the packaged application:
 
 ```powershell
 $env:SCORE_TEST_EXECUTABLE = (Resolve-Path 'dist/win-unpacked/Video Sheet to PDF.exe').Path
-npm run test:desktop
+npm run test:ai
+npm run test:duplicate
 npm run test:playback
-npm run test:languages
-npm run test:instruments
-npm run test:free
 Remove-Item Env:SCORE_TEST_EXECUTABLE
 npm run test:portable
 ```
@@ -37,6 +35,17 @@ media. The portable check launches the final single EXE with only Windows system
 tools on PATH and tests video/audio conversion using the bundled FFmpeg. Build
 directories, diagnostics, samples, cached downloads, and private
 projects are excluded from source control and the release.
+
+The integrated AI test imports a local structured fixture and exercises connection
+controls, page settings, preview, row duplication/exclusion/reflow, project saving,
+PDF export, and narrow layouts without calling an AI service. The older automatic
+extraction UI scripts below target the pre-0.16 screenshot workflow and are not
+the AI release smoke tests. Live model checks are separate and consume allowance.
+
+The Duplicate check uses `screen_sample/spyair_test1.drumscore`. The bass release
+check uses the cached `wpme40lu_XE-av.mp4` in the application's existing output
+folder under `%APPDATA%/Video Sheet to PDF/`, extracts the first 45 seconds with
+the packaged engine, and checks numbered recovery and print preview.
 
 `npm run test:guitar` additionally checks the three supplied guitar reference videos
 stored as `diagnostics/guitar/t_dHA1lgeAU-av.mp4` and

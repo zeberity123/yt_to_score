@@ -39,7 +39,11 @@ def system_groups(gray, notation):
         return staffs(gray,6)
     ordinary = staffs(gray)
     if notation == 'bass':
-        tabs = staffs(gray, 4)
+        # A faint fifth rule may disappear at the darker detection threshold.
+        # Never let that four-rule subset compete with its complete staff.
+        tabs = [tab for tab in staffs(gray, 4) if not any(
+            tab[0] >= staff[0]-2 and tab[1] <= staff[1]+2
+            for staff in ordinary)]
         result = []
         used = set()
         for tab in tabs:
@@ -80,6 +84,55 @@ def system_groups(gray, notation):
 
 def split_notation(gray, notation, with_bounds=False):
     return split_systems(gray, with_bounds=with_bounds, groups=system_groups(gray,notation))
+
+
+def follow_region(frame, region, notation):
+    """Follow one complete system near the selected area; leave pages alone.
+
+    Only a local band is inspected at the ordinary sampling rate. The original
+    selection remains the anchor so transitions cannot accumulate crop drift.
+    """
+    h, w = frame.shape[:2]
+    search = Region(max(0, region.left-.04), max(0, region.top-.16),
+                    min(1, region.right+.04), min(1, region.bottom+.16))
+    gray = clean_notation(search.crop(frame), notation)
+    groups = system_groups(gray, notation) if notation in ('bass','piano') else staffs(gray, 6 if notation == 'guitar' else 5)
+    sx, sy = int(search.left*w), int(search.top*h)
+    inside = [g for g in groups if g[0]+sy >= region.top*h and g[1]+sy <= region.bottom*h]
+    if len(inside) > 1 or not groups:
+        return region
+    center = (region.top+region.bottom)*h/2-sy
+    candidates = [g for g in groups if g[1]+sy > region.top*h and g[0]+sy < region.bottom*h]
+    if not candidates:
+        return region
+    first,last,spacing = min(candidates, key=lambda g: abs((g[0]+g[1])/2-center))
+    top, bottom = max(0, int(first-spacing*5)), min(len(gray), int(last+spacing*5)+1)
+    raw = search.crop(frame)
+    if np.mean(raw[first:last+1] > 200) > .55:
+        white = (raw.max(axis=2) > 200).mean(axis=1)
+        smooth = cv2.blur(white.reshape(-1,1),(1,max(3,int(spacing*2)))).ravel()
+        edge = first
+        while edge > top and smooth[edge-1] > .70:
+            edge -= 1
+        top = max(top, edge)
+    # A neighboring staff can be incomplete as a system (e.g. the next TAB is
+    # offscreen), but still tells us where this system's annotations must stop.
+    neighbors = staffs(gray,5) + staffs(gray,4 if notation == 'bass' else 6)
+    for a,b,s in neighbors:
+        if b < first-spacing:
+            top = max(top, int((b+first)/2))
+        if a > last+spacing:
+            bottom = min(bottom, int((last+a)/2))
+    # Use long rules, not the changing notes, to keep the horizontal crop stable.
+    band = (gray[first:last+1] < 235).astype(np.uint8)
+    horizontal = cv2.morphologyEx(band, cv2.MORPH_OPEN, np.ones((1,max(20,w//7)),np.uint8))
+    cols = np.flatnonzero(horizontal.sum(axis=0) >= 3)
+    left, right = 0, gray.shape[1]
+    if len(cols):
+        left = max(0,int(cols[0]-spacing*3))
+        right = min(gray.shape[1],int(cols[-1]+spacing*2)+1)
+    return Region((sx+left+.01)/w, (sy+top+.01)/h,
+                  min(1,(sx+right+.01)/w), min(1,(sy+bottom+.01)/h))
 
 
 def system_fingerprint(gray, notation):
@@ -140,6 +193,12 @@ def detect_region(frame, notation, mode='auto'):
     margin=(9 if notation == 'guitar' else 7) if is_light else 5
     top=max(0,int(first-spacing*margin))
     bottom=min(h,int(last+spacing*margin))
+    if notation == 'bass' and not is_light and last-first < spacing*3.5:
+        # Standalone white TAB: its labels sit just above the strings and its
+        # rhythm stems below. Symmetric five-gap padding includes the instrument
+        # and bright room behind it, overwhelming both comparison and cleanup.
+        top=max(0,int(first-spacing*2.5))
+        bottom=min(h,int(last+spacing*3.5))
     if is_light:
         # Stop at the edge of the white panel, including its annotations.
         white=(raw>200).mean(axis=1)

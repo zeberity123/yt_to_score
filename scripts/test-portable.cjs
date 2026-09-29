@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 (async () => {
   const root = path.resolve(__dirname, '..');
   const version = require('../package.json').version;
-  const executable = path.join(root, 'dist', `Video-Sheet-to-PDF-${version}-win-x64.exe`);
+  const executable = path.join(root, 'dist', `Video-Sheet-to-PDF-AI-${version}-win-x64.exe`);
   const profile = path.join(root, 'diagnostics', 'portable-test-profile');
   const ffmpegFolder = path.join(root, 'dist/win-unpacked/resources/backend/_internal/imageio_ffmpeg/binaries');
   const ffmpeg = path.join(ffmpegFolder, fs.readdirSync(ffmpegFolder).find(name => name.endsWith('.exe')));
@@ -48,6 +48,9 @@ const assert = require('node:assert/strict');
     await page.locator('#add-line').click();
     await page.waitForFunction(() => document.querySelector('#manual-count').textContent === '1');
     await page.locator('#review-tab').click();
+    await page.locator('#duplicate-line').click();
+    await page.waitForFunction(() => document.querySelectorAll('.line-item').length === 2);
+    assert.equal(await page.locator('.line-item').last().getAttribute('aria-pressed'), 'true');
     assert.equal(await page.locator('#gap').inputValue(),'0');
     assert.equal(await page.locator('#left-margin').inputValue(),'3');
     assert.equal(await page.locator('#right-margin').inputValue(),'3');
@@ -83,7 +86,7 @@ const assert = require('node:assert/strict');
     browser = null;
     assert.ok(!fs.existsSync(exportsRoot) || !fs.readdirSync(exportsRoot).some(name => name.startsWith('session-')));
     assert.ok(fs.readdirSync(path.join(profile,'output')).some(name => name.startsWith('manual_')));
-    console.log('Passed: single EXE, bundled conversion, capture, defaults, print preset, and shutdown cleanup without deleting working projects.');
+    console.log('Passed: single EXE, bundled conversion, capture, duplicate, defaults, print preset, and shutdown cleanup without deleting working projects.');
   } finally {
     if (browser) {
       try { const session = await browser.newBrowserCDPSession(); await session.send('Browser.close'); } catch {}

@@ -40,6 +40,53 @@ def test_api_auth_and_static_path_boundaries(server):
     assert error.value.code == 404
 
 
+def settle(workspace):
+    import time
+    deadline = time.monotonic()+30
+    while workspace.busy and time.monotonic() < deadline:
+        time.sleep(.02)
+    assert not workspace.busy and not workspace.error, workspace.error
+
+
+def test_capture_modes_and_open_routing(server, tmp_path):
+    workspace = server.workspace
+    assert set(workspace.projects) == {'automatic', 'ai', 'manual'}
+    workspace.command('mode', {'mode': 'ai'})
+    assert workspace.state()['mode'] == 'ai' and not workspace.state()['canUndo']
+    workspace.command('mode', {'mode': 'free'})  # older UI alias for chord capture
+    assert workspace.mode == 'automatic'
+    with pytest.raises(ValueError, match='Unknown capture mode'):
+        workspace.command('mode', {'mode': 'hybrid'})
+    manual = new_manual_project(workspace.output, 'Manual', '', Region())
+    append_line(manual, np.full((80, 160, 3), 255, np.uint8), Region(), 1)
+    workspace.command('open', {'path': str(manual.directory/'project.json')})
+    assert workspace.mode == 'manual' and len(workspace.project.lines) == 1
+    workspace.video = tmp_path/'video.mp4'
+    workspace.video.write_bytes(b'fixture')
+    with pytest.raises(ValueError, match='Choose Automatic mode'):
+        workspace.command('extract', {'notation': 'staff'})
+
+
+def test_extract_action_maps_chord_to_text_capture(server, tmp_path):
+    from unittest.mock import patch
+    workspace = server.workspace
+    workspace.video = tmp_path/'video.mp4'
+    workspace.video.write_bytes(b'fixture')
+    calls = []
+    def fake(path, output, title, source, region, **options):
+        calls.append(options)
+        return new_manual_project(output, title, source, region)
+    with patch('drumscore.server.extract', fake):
+        workspace.command('extract', {'notation': 'chord', 'interval': .5, 'timingRepeats': True, 'bpm': None})
+        settle(workspace)
+        workspace.command('extract', {'notation': 'bass', 'bpm': 120, 'beatsPerBar': 3})
+        settle(workspace)
+    assert calls[0]['mode'] == 'free' and calls[0]['notation'] == 'free' and calls[0]['timing_repeats'] and calls[0]['bpm'] is None
+    assert calls[1]['mode'] == 'auto' and calls[1]['notation'] == 'bass' and calls[1]['bpm'] == 120 and calls[1]['beats_per_bar'] == 3
+    assert workspace.mode == 'automatic' and workspace.state()['notation'] == 'bass'
+    assert workspace.projects['automatic'] is not None and workspace.projects['ai'] is None
+
+
 def test_instrument_restored_from_project_and_invalid_mode_rejected(server):
     workspace=server.workspace
     project=new_manual_project(workspace.output,'Piano','',Region())
@@ -47,12 +94,53 @@ def test_instrument_restored_from_project_and_invalid_mode_rejected(server):
     append_line(project,np.full((80,160,3),255,np.uint8),Region(),0)
     workspace.command('open',{'path':str(project.directory/'project.json')})
     assert workspace.state()['notation']=='piano'
-    workspace.command('mode',{'mode':'manual'})
-    workspace.notation='bass'
+    assert workspace.mode=='manual'  # hand-picked frames open in Manual
     workspace.command('mode',{'mode':'automatic'})
+    workspace.notation='bass'
+    workspace.command('mode',{'mode':'manual'})
     assert workspace.state()['notation']=='piano'
     with pytest.raises(ValueError,match='Unknown notation'):
         workspace.command('load',{'source':'unused','notation':'invalid'})
+
+
+def test_duplicate_api_inserts_after_selection_and_invalidates_preview(server):
+    workspace=server.workspace
+    project=new_manual_project(workspace.output,'Repeat','',Region())
+    workspace.projects['manual']=project
+    workspace.mode='manual'
+    for time in (4,42,59):
+        append_line(project,np.full((80,160,3),255,np.uint8),Region(),time)
+    workspace.print_preview={'id':'old'}
+    with request(server,'/api/command',{'action':'duplicate','index':1}) as response:
+        assert json.load(response)['ok']
+    assert [line.time for line in project.lines]==[4,42,42,59]
+    assert workspace.print_preview is None
+    assert project.lines[1].path != project.lines[2].path
+    workspace.command('remove',{'index':2})
+    workspace.command('undo',{})
+    assert [line.time for line in project.lines]==[4,42,42,59]
+    with pytest.raises(ValueError,match='Select a score'):
+        workspace.command('duplicate',{'index':-1})
+
+
+def test_original_image_endpoint_uses_preserved_color_pixels(server):
+    import io
+    from PIL import Image
+    from drumscore.extract import ScoreLine
+    workspace=server.workspace
+    project=new_manual_project(workspace.output,'Colors','',Region())
+    project.notation='bass'
+    Image.new('RGB',(200,80),'white').save(project.directory/'clean.png')
+    Image.new('RGB',(200,80),(20,60,90)).save(project.directory/'raw.png')
+    project.lines=[ScoreLine('clean.png',0,1,raw_source_path='raw.png',crop=[0,0,1,1])]
+    workspace.projects['automatic']=project
+    assert workspace.state()['originalMissing']==0
+    workspace.command('background',{'background':'original'})
+    with request(server,'/api/image?index=0') as response:
+        image=Image.open(io.BytesIO(response.read()))
+        assert image.getpixel((50,20))==(20,60,90)
+    project.lines[0].raw_source_path=None
+    assert workspace.state()['originalMissing']==1
 
 
 def test_edit_and_range_requests_and_archive_download(server):

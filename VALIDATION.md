@@ -1,5 +1,157 @@
 # Validation
 
+## Flexible score area and all-instrument timing — 2026-09-28
+
+- Reproduced the missing 183-second bass system and detached rest-count “2”
+  in cached `f5VnaleBDJM`. A faint fifth rule was detected as a four-string
+  TAB subset at a second threshold, creating overlapping system groups.
+- Excluding that subset restores both 183 and 189.5-second systems and keeps
+  the rest-count annotation with the 196-second system, with timing disabled.
+- Full 260.28-second video extraction with optional flexible area, 0.5-second
+  sampling, and timing disabled produced 34 lines. Visually inspected lines
+  25–28 and 34: the missing line is present, the “2” remains above the rest,
+  and the lowered final TAB staff is complete. First ten lines were also
+  inspected for annotation clipping. This is not note-for-note verification.
+- Full extraction took 308 seconds with other validation running concurrently;
+  this is not an isolated performance comparison. Flexible area remains opt-in.
+- Saved `screen_sample/f5VnaleBDJM_updated.drumscore` and a five-page PDF, plus
+  `screen_sample/f5VnaleBDJM_fixed_lines.png` for visual review. User originals
+  and application projects were only read.
+- **190 Python tests passed**, including faint-rule grouping, shifted paired
+  staff crops and source coordinates, full-page preservation, incomplete bars,
+  and drum/piano timing recovery. The existing SPYAIR held-line fixture still
+  recovers exactly one repeat at 50.5 seconds, yielding 23 lines.
+- Desktop workflow verified all four notation types expose BPM and optional
+  flexible-area controls; Chord hides them. Fresh extraction of 176–204 seconds
+  produced four lines, with zero timing copies at 145 BPM. Korean/Japanese
+  translations and mobile layout passed.
+- Repeated the new workflow against the packaged 0.15.0 backend and UI.
+  Packaged Ado regression checks also passed: four-bar layouts, source-color
+  Off mode, matching PDF-preview geometry, Black/White switching, and the
+  older-project notice.
+- Built `dist/Video-Sheet-to-PDF-0.15.0-win-x64.exe` (212,693,073 bytes).
+  SHA-256: `3560358ea1c21af78f562b895db78e7d95473646ce70b667d6237bb12b342e29`.
+  The finished single EXE passed bundled conversion, capture, Duplicate,
+  print-default/preset, and shutdown tests with system-only PATH.
+
+## Numbered-bar layout and reversible source colors — 2026-09-28
+
+- Reproduced the reported five-bar print rows 2, 17, and 26 from the user's
+  latest Ado extraction, copied read-only from the application workspace into
+  diagnostics. Broken barlines caused the print formatter to merge adjacent
+  musical bars while counting each merged span as one.
+- Numbered extraction now stores confirmed column boundaries, bar numbers,
+  and staff alignment. Print layout uses that metadata instead of detecting
+  the damaged pixel barlines again. It survives archive/open and Duplicate.
+- Automatic captures preserve separate source-color images. Review, crop
+  preview, and PDF Original mode use matching raw geometry. Tests cover actual
+  API pixels, archive round trips, independent duplicate crops, and original
+  colors from ordinary automatic extraction as well as numbered composites.
+- Old automatic projects show a notice when source colors were never stored.
+  Existing manual/Chord captures remain directly reversible.
+- Compared real Ado bars while developing patch selection and temporal noise
+  rejection. A tighter neutral-color cutoff damaged tinted antialiased stems;
+  it was reverted and a regression test now protects those strokes. Cleanup
+  uses source patches plus repeated clear observations, retaining bright-frame
+  uncertainty. Persistent background objects and missing bars remain unresolved.
+- The Electron interface check passed confirmed four-bar reflow, source-color
+  Off, consistent White/Black/Original print geometry, and the old-project notice.
+- A packaged UI check exposed a stale status-response race that could leave the
+  print preview closed. Responses from polls begun before a command are now
+  discarded. The interface test deliberately delays such a response and verifies
+  that the preview still opens.
+- Final Python validation: **182 tests passed**. The packaged app also passed
+  a fresh extraction of Ado's first 45 seconds, checking stored bar identities,
+  source-color images, crop detection, extraction warnings, and print preview.
+- Final full Ado extraction recovered **131 numbered bars** plus an uncertain
+  ending. Four-bar printing produces **33 four-bar rows and one short final row**
+  (four PDF pages). Visually checked print rows 2, 17, and 26 and compared captures
+  around bars 73–76 and 122–125 to confirm the relaxed filter preserves stems.
+  Bars 9, 21, 22, 43, 44, 78, 108, 109, 137, and 138 remain missing; background
+  artifacts still remain in several captures. Reviewable final files are
+  `screen_sample/ado_cleanup_v014.drumscore` and `ado_cleanup_v014.pdf`.
+- Built `dist/Video-Sheet-to-PDF-0.14.0-win-x64.exe` (212,685,685 bytes).
+  SHA-256: `31e064e84223fbc26b05e32285d624dc4cd0312eeb9d6f6e17a5714bb251fa30`.
+  The final packaged interface test passed, including a deliberately delayed
+  status response. The final portable EXE passed conversion, capture, Duplicate,
+  print defaults, and shutdown cleanup with only Windows system tools on PATH.
+
+## BPM and timing-assisted repeats — 2026-09-28
+
+- All **175 Python tests passed**. New coverage includes noisy audio pulses at
+  three tempos, silence, cancellation, invalid settings, incomplete/combined TAB,
+  two-bar lines, multiple identical passes, wrong tempo/meter, source gaps,
+  first/final holds, and independently editable archived copies.
+- Audio analysis of the cached original SPYAIR video estimates **113.0 BPM**,
+  consistent across three sections. Ado's sections disagree and the UI marks its
+  estimate uncertain. Estimates are editable and show half/double alternatives.
+- Full SPYAIR extraction through the Electron interface, with manual **113 BPM**,
+  **4 beats per bar**, and timing recovery enabled, yields **23 lines**. It adds
+  exactly one copy after line 05 at **50.5s**, preserving lines 02/03 and shorter
+  two-bar lines. The first/final holds do not create extra copies. Inferences
+  are explicitly reported in project warnings; timing is not proof of a repeat.
+- The interface test passed BPM detection, manual override, print preview,
+  Korean/Japanese translations, a 390-pixel mobile layout, resetting settings
+  when loading another video, and the uncertainty message for Ado.
+- `screen_sample/spyair_timing_recovered.drumscore` and the corresponding
+  two-page PDF contain the automatically inferred result. Originals are untouched.
+- Numbered recovery continues to take priority over timing. No song IDs or
+  per-song exceptions are present in extraction. Without readable bar numbers,
+  irregular scrolling remains dependent on ordinary visual overlap matching.
+- Built `dist/Video-Sheet-to-PDF-0.13.0-win-x64.exe` (212,716,494 bytes).
+  SHA-256: `0ebadf131cf056d7f0015487039c71cb471a9cab03cc1ef10b5db6755b6bb997`.
+  The packaged app passed the same full SPYAIR/BPM interface test. The final
+  single-file EXE passed bundled audio/video conversion, capture, Duplicate,
+  print defaults and shutdown cleanup with only Windows system tools on PATH.
+
+## Bass repeats and numbered-bar recovery — 2026-09-27
+
+- Added Duplicate beside Exclude. API and archive checks cover insertion order,
+  independent crop/height edits and print identities, save failure rollback,
+  removal/undo, and print-preview invalidation. The Electron check passed in
+  English, Korean, and Japanese, including a 390-pixel-wide viewport.
+- Inspected both supplied archives and the cached original 1080p videos. SPYAIR
+  holds the same notation from about 42 to 59 seconds without a visible repeat
+  boundary. Automatic extraction still returns 22 lines; no timing-based repeat
+  guess was added. `screen_sample/spyair_restored.drumscore` explicitly duplicates
+  line 05 after itself (23 lines). The copy's approximate time is 50.5 seconds.
+  Its PDF has two pages. The supplied archive is untouched.
+- Tightened standalone white bass TAB cropping while preserving chord labels
+  and rhythm stems. The Ado crop changes from approximately y=662–1026 to
+  y=732–984 in the 1920×1080 video; horizontal width remains intact.
+- Ado's scrolling transitions can last a single frame. The new specialized
+  path checks bar positions at source frame rate, verifies adjacent numbers,
+  reuses confirmed widths when footage hides a boundary, and chooses clearer
+  vertical slices of each bar. Sparse or backward numbering falls back to
+  ordinary extraction. No external OCR model or service is required.
+- The full Ado validation recovered **132 numbered bars**, assembled into 35
+  lines, plus an explicitly unconfirmed ending capture beginning at bar 142
+  through the closing double bar (**36 lines**, five PDF pages). Reviewable
+  outputs: `screen_sample/ado_recovered.drumscore` and `ado_recovered.pdf`.
+  **This is a partial recovery, not a clean complete score:** bars 21, 22, 43,
+  44, 78, 108, 109, 137, and 138 were not recovered. Bright-background warnings
+  flag 12, 18, 33, 46, 51, 54, 56, 62, 81, 89, 94, 103, 117, and 120. Other
+  background fragments remain visible too. Reviewed contact sheets and the
+  rendered PDF; the warnings are retained in the portable project.
+- Synthetic regressions cover unchanged notes in different numbered measures,
+  cursors, missing boundaries, clearer alternate positions, numbering resets,
+  unnumbered openings, uncertain endings with source-frame access, archive
+  round trips, and gap reporting.
+- Final validation: **157 Python tests passed**. The final Electron Duplicate
+  check also passed, including selecting the copy when duplicating the last line.
+- Built `dist/Video-Sheet-to-PDF-0.12.0-win-x64.exe` (212,690,116 bytes).
+  SHA-256: `3d049b10a1f336da51bfd8f2b859cd651377541a140369239d54655679a01427`.
+  The checksum is also saved in the adjacent `.exe.sha256` file.
+- The packaged Duplicate check passed independent editing, removal/undo,
+  last-line selection, translations, and mobile layout. The packaged bass check
+  processed Ado's first 45 seconds and passed tighter cropping, numbered recovery,
+  review warnings, and print preview. That shorter window recovered 25 bars and
+  reported its remaining gaps; full-video source validation is described above.
+- The final portable EXE passed with only Windows system tools on PATH:
+  bundled video/audio conversion, manual capture, Duplicate, print defaults,
+  and shutdown cleanup while retaining working projects. No GitHub release
+  was published.
+
 ## Chord backgrounds and cropped TAB arrangement — 2026-09-26
 
 - All **145 Python tests passed**, including reversible White/Black/Original

@@ -10,7 +10,33 @@ $('review-speed').replaceChildren(...Array.from($('speed').options, option => op
 let state = null, selected = 0, tab = 'capture', requesting = false, uploading = false;
 let listSignature = '', currentMedia = '', job = null, errorShown = '', editorIndex = 0;
 let polling = false, initialized = false, titleDirty = false;
+let commandEpoch = 0;
 let importingVideo = false, mediaLoading = false;
+let aiLayoutKey = '';
+let connectionResult = '';
+let extractionProjectId = null;
+const aiModels = {Codex:['gpt-6-astra','gpt-6-sol','gpt-6-luna'], 'Claude CLI':['sonnet','opus','haiku'], OpenAI:['gpt-6-luna','gpt-6-sol','gpt-6-astra'], DeepSeek:['deepseek-flash'], Anthropic:['claude-haiku-4-5']};
+function aiConnection() {
+  const provider = $('ai-provider').value, cli = ['Codex','Claude CLI'].includes(provider);
+  $('ai-model').replaceChildren(...aiModels[provider].map(model => new Option(model,model)));
+  $('ai-key').value = '';
+  $('ai-key-field').hidden = cli;
+  $('ai-connection-note').textContent = cli ? `Uses your signed-in ${provider === 'Codex' ? 'Codex' : 'Claude Code'} CLI and subscription allowance. Account limits apply.` : 'Frames and instructions are sent to this provider. API usage is billed separately; the key stays in memory.';
+}
+aiConnection();
+function aiPageSettings() {
+  return {title:$('pdf-title').value, title_first_page_only:$('ai-title-first').checked,
+    subtitle:$('ai-subtitle').value, song_info:$('ai-song-info').value, show_metadata:$('ai-show-info').checked,
+    footer:$('ai-footer').value, page_numbers:$('ai-page-numbers').checked,
+    bars_per_line:barsOverride('ai-review-override') ? Number($('ai-review-bars').value) : 0,
+    merge_rests_auto:barsOverride('ai-review-override') && $('ai-merge-rests').checked};
+}
+function aiConnectionPayload() { return {provider:$('ai-provider').value, model:$('ai-model').value, apiKey:$('ai-key').value}; }
+function barsOverride(id) { return $(id).getAttribute('aria-pressed') === 'true'; }
+function showBarsToggle(id, enabled) {
+  $(id).setAttribute('aria-pressed', String(enabled));
+  $(id).textContent = `Override bars per line: ${enabled ? 'ON' : 'OFF'}`;
+}
 const downloaded = new Set();
 
 function fail(error) { $('error-text').textContent = error.message || String(error); $('error').hidden = false; }
@@ -57,17 +83,33 @@ new ResizeObserver(fitLine).observe($('line-stage'));
 $('line-image').addEventListener('load',fitLine);
 
 async function command(action, data = {}) {
+  const epoch = ++commandEpoch;
   requesting = true;
   updateControls();
   try {
     await api.command(action, data);
-    await refresh();
+    await refresh(epoch);
   } finally { requesting = false; updateControls(); }
 }
-async function refresh() {
+async function refresh(epoch = commandEpoch) {
   const next = await api.state();
+  // A poll begun before a command must not clear its job or restore old state.
+  if (epoch !== commandEpoch) return;
   const previous = state;
   state = next;
+  if (next.videoId !== previous?.videoId) {
+    $('ai-select-area').checked = false;
+    $('bpm').value = ''; $('beats-per-bar').value = '4'; $('timing-repeats').checked = false;
+    $('flexible-area').checked = false;
+    $('tempo-result').hidden = true;
+  }
+  if (next.tempo && next.tempo.id !== previous?.tempo?.id) {
+    $('bpm').value = next.tempo.bpm;
+    $('tempo-result').textContent = next.tempo.consistent
+      ? `Audio estimate: ${next.tempo.bpm} BPM. Check half/double tempo: ${next.tempo.alternatives.join(' / ')}.`
+      : `Uncertain audio estimate: ${next.tempo.bpm} BPM. Sections disagree; enter the correct BPM manually.`;
+    $('tempo-result').hidden = false;
+  }
   if (next.notation && next.notation !== 'free' && next.notation !== previous?.notation) $('notation').value = next.notation;
   if (!initialized) { Object.keys(next.artifacts).forEach(key => downloaded.add(key)); initialized = true; }
   if (job === 'print-preview' && !next.busy) {
@@ -75,7 +117,8 @@ async function refresh() {
     job=null;
   }
   if (previous?.busy && !next.busy) {
-    if (job === 'extract' && !next.error) { selected = 0; setReviewAudio(false); switchTab('review'); }
+    if (job === 'extract' && !next.error && next.lines.length && next.projectId !== extractionProjectId) { selected = 0; setReviewAudio(false); switchTab('review'); }
+    if (job === 'ai-edit' && !next.error) $('ai-edit-text').value = '';  // keep the request text if it failed
     job = null;
   }
   for (const [key, artifact] of Object.entries(next.artifacts)) {
@@ -109,17 +152,61 @@ async function togglePlayback() {
 function imageUrl(index, kind = 'line') { return api.url('image', {index, kind, v:state.revision}); }
 function render() {
   if (!state) return;
-  const manual = state.mode === 'manual';
-  const free = state.mode === 'free';
+  const mode = state.mode === 'free' ? 'automatic' : state.mode;  // older servers report chord capture as 'free'
+  const manual = mode === 'manual', ai = mode === 'ai';
+  const chord = $('notation').value === 'chord';
   document.body.classList.toggle('has-video', !!state.video);
-  $('automatic').setAttribute('aria-pressed', String(!manual && !free));
-  $('manual').setAttribute('aria-pressed', String(manual));
-  $('free').setAttribute('aria-pressed', String(free));
-  $('notation-controls').hidden = free;
-  $('free-help').hidden = !free;
-  $('extract').firstChild.textContent = free ? 'Extract text lines ' : 'Extract score lines ';
-  $('auto-controls').hidden = manual;
+  for (const id of ['automatic','ai','manual']) $(id).setAttribute('aria-pressed', String(mode === id));
+  $('free-help').hidden = !chord || mode !== 'automatic';
+  $('timing-controls').hidden = chord;
+  $('adaptive-controls').hidden = chord;
+  $('extract').firstChild.textContent = chord ? 'Extract text lines ' : 'Extract score lines ';
+  $('auto-controls').hidden = mode !== 'automatic';
+  $('ai-controls').hidden = !ai;
   $('manual-controls').hidden = !manual;
+  $('video-crop').hidden = ai && !$('ai-select-area').checked;
+  // The capture settings panel follows whichever flow captures frames: Automatic, or AI keeping video images.
+  const imagesMethod = $('ai-method').value === 'images';
+  const settingsHost = ai && imagesMethod ? $('ai-capture-settings') : $('auto-capture-settings');
+  if ($('advanced').parentElement !== settingsHost) settingsHost.append($('advanced'));
+  $('ai-method-note').textContent = imagesMethod
+    ? 'Keeps the original score images. The AI only finds the score, checks bar order and flags duplicates or broken lines — minutes, and light on your allowance.'
+    : 'Reads every bar and engraves new notation you can edit with AI. Many requests; slow, but the result is uniform and editable.';
+  $('ai-bars-control').hidden = $('ai-bars-note').hidden = imagesMethod;
+  $('ai-instructions-step').hidden = imagesMethod;
+  $('ai-page-controls').hidden = !state.ai;
+  $('ai-edit-controls').hidden = !(state.ai || state.aiCheck);
+  $('ai-line-transcribe').hidden = !state.aiCheck;
+  const edit = state.aiEdit;
+  $('ai-edit-notes').hidden = !edit;
+  if (edit) $('ai-edit-notes').replaceChildren(...[
+    ...(edit.marks.length ? [`Updated marks in bars ${edit.marks.join(', ')}`] : []),
+    ...(edit.reread.length ? [`Re-read bars ${edit.reread.join(', ')}`] : []),
+    ...edit.observations, ...edit.unsupported.map(text => `Not applied: ${text}`)]
+    .map(text => { const li = document.createElement('li'); li.textContent = text; return li; }));
+  for (const selector of ['.background-controls','.print-layout-controls','#reflow-help']) document.querySelector(selector).hidden = !!state.ai;
+  const layoutKey = `${state.projectId}:${JSON.stringify(state.aiLayout)}`;
+  if (state.ai && layoutKey !== aiLayoutKey) {
+    aiLayoutKey = layoutKey;
+    const layout = state.aiLayout;
+    $('ai-title-first').checked = layout.title_first_page_only;
+    $('ai-subtitle').value = layout.subtitle;
+    $('ai-show-info').checked = layout.show_metadata;
+    $('ai-song-info').value = layout.song_info || '';
+    $('ai-footer').value = layout.footer;
+    $('ai-page-numbers').checked = layout.page_numbers;
+    showBarsToggle('ai-review-override', layout.bars_per_line > 0);
+    $('ai-review-bars').value = layout.bars_per_line || 4;
+    $('ai-merge-rests').checked = !!layout.merge_rests_auto;
+  }
+  const usage = state.aiUsage;
+  $('ai-usage').hidden = !usage;
+  if (usage) $('ai-usage').textContent = `${usage.requests} requests · ${usage.cache_hits} reused · ${usage.input_tokens.toLocaleString()} input / ${usage.output_tokens.toLocaleString()} output tokens · ${usage.subscription ? 'Subscription allowance' : `Estimated $${usage.estimated_usd.toFixed(4)}`}`;
+  $('gap').closest('label').hidden = !!state.ai;
+  if (state.aiConnection && state.aiConnection !== connectionResult) {
+    connectionResult = state.aiConnection;
+    $('ai-connection-note').textContent = state.aiConnection;
+  }
   const mediaKey = state.video ? state.videoId : '';
   if (mediaKey !== currentMedia) {
     currentMedia = mediaKey;
@@ -134,6 +221,7 @@ function render() {
   if (!titleDirty && document.activeElement !== $('pdf-title')) $('pdf-title').value = state.title;
   const bars=state.barsPerLine || 0;
   $('background').value=state.background || 'white';
+  $('original-missing').hidden=state.background !== 'original' || !state.originalMissing;
   $('reflow-bars').checked=bars>0;
   if (bars && document.activeElement !== $('bars-per-line')) $('bars-per-line').value=bars;
   $('reflow-label').hidden=$('bars-label').hidden=!['guitar','bass'].includes(state.notation);
@@ -148,10 +236,23 @@ function render() {
   renderSelection();
   $('warning-list').replaceChildren(...state.warnings.map(text => { const li = document.createElement('li'); li.textContent = text; return li; }));
   $('warnings').hidden = !state.warnings.length;
-  if (!uploading) $('status').textContent = state.status;
+  if (!uploading) {
+    $('status').textContent = state.status;
+    $('status').title = state.status;
+  }
+  const elapsed = state.elapsedSeconds;
+  $('elapsed-time').hidden = elapsed == null;
+  if (elapsed != null) {
+    const seconds = Math.floor(Math.max(0, elapsed));
+    $('elapsed-time').textContent = `Time taken: ${String(Math.floor(seconds/3600)).padStart(2,'0')}:${String(Math.floor(seconds/60)%60).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`;
+  }
   $('progress').hidden = !state.busy;
   $('progress').value = state.progress;
   $('cancel').hidden = !state.busy;
+  $('pause-ai').hidden = !state.busy || !state.aiPause;
+  $('pause-ai').textContent = state.aiPause?.requested ? 'Resume' : 'Pause';
+  $('pause-ai').title = 'Pause stops new AI requests after the current requests finish. Keep the app open to resume immediately.';
+  $('pause-ai').disabled = requesting || !state.aiPause;
   $('status-dot').classList.toggle('busy', state.busy || uploading);
   if (state.error && state.error !== errorShown) { errorShown = state.error; fail(state.error); }
   if (!state.error) errorShown = '';
@@ -164,10 +265,13 @@ function renderLines() {
     button.setAttribute('aria-label', `Line ${index+1}, ${line.included ? 'included' : 'excluded'}`);
     const head = document.createElement('span'); head.className = 'line-item-head';
     const title = document.createElement('span'); title.textContent = `LINE ${String(index+1).padStart(2,'0')}`;
-    const tick = document.createElement('span'); tick.textContent = line.included ? '✓' : '—'; head.append(title,tick);
+    const tick = document.createElement('span'); tick.textContent = line.notes?.length ? '⚑' : line.included ? '✓' : '—'; head.append(title,tick);
+    if (line.notes?.length) tick.title = line.notes.join('\n');
     const img = document.createElement('img'); img.src = imageUrl(index); img.alt = ''; img.loading = 'lazy';
     img.style.transform=`scaleY(${line.height_scale || 1})`;
-    const note = document.createElement('small'); note.textContent = `${clock(line.time,true)} · ${state.mode === 'free' ? 'Chord capture' : line.view ? 'Automatic capture' : 'Manual capture'}`;
+    const kind = line.ai_bar_ids ? 'AI engraved' : ['free','chord'].includes(state.notation) ? 'Chord capture'
+      : line.view ? (state.mode === 'ai' ? 'AI capture' : 'Automatic capture') : 'Manual capture';
+    const note = document.createElement('small'); note.textContent = `${clock(line.time,true)} · ${kind}`;
     button.append(head,img,note);
     button.addEventListener('click', () => { selected = index; renderSelection(); updateControls(); });
     return button;
@@ -186,6 +290,8 @@ function renderSelection() {
     $('line-meta').textContent = `${clock(line.time,true)} · ${line.included ? 'Included in PDF' : 'Excluded from PDF'}`;
     requestAnimationFrame(fitLine);
   }
+  $('line-notes').hidden = !line?.notes?.length;
+  if (line?.notes?.length) $('line-notes').textContent = line.notes.join(' · ');
 }
 function updateControls() {
   const loadingVideo = job === 'load' || importingVideo || mediaLoading;
@@ -199,12 +305,14 @@ function updateControls() {
   const ready = loaded && video.readyState >= 2 && !video.seeking;
   const conditions = {
     'load-video':!!$('source').value.trim(), 'choose-video':true, 'open-project':true,
-    automatic:true, manual:true, free:true, detect:ready, extract:loaded, play:ready,
+    automatic:true, ai:true, manual:true, detect:ready, extract:loaded, 'ai-extract':loaded, layout:true, play:ready,
+    'detect-tempo':loaded && state.hasAudio, bpm:true, 'beats-per-bar':true, 'timing-repeats':true, 'flexible-area':true,
     'add-line':ready, speed:loaded, mute:loaded && state.hasAudio !== false, volume:loaded && state.hasAudio !== false,
     'keep-review-audio':loaded && state.hasAudio !== false, 'review-audio':loaded && state.hasAudio !== false,
     'review-play':ready && state.hasAudio !== false && $('review-audio').checked,
     'review-speed':loaded && state.hasAudio !== false && $('review-audio').checked,
-    'edit-line':!!line, 'include-line':!!line, 'move-up':!!line && selected>0,
+    'edit-line':!!line && !state.ai && !line.ai_bar_ids, 'include-line':!!line, 'duplicate-line':!!line, 'move-up':!!line && selected>0,
+    'ai-line-transcribe':!!state?.aiCheck && !!line && !['free','chord'].includes(state.notation), 'ai-method':true,
     'undo-line':!!state?.canUndo,
     'move-down':!!line && selected<state.lines.length-1,
     'save-project':!!state?.lines.length, 'export-pdf':!!state?.lines.some(l => l.included),
@@ -212,6 +320,13 @@ function updateControls() {
     'bars-per-line':!!state?.barsPerLine,
     'for-print':true, notation:true,
     background:!!state?.lines.length,
+    'ai-provider':true, 'ai-model':true, 'ai-key':true, 'ai-check':true, 'ai-instructions':true,
+    'ai-select-area':loaded,
+    'ai-override-bars':$('notation').value !== 'chord', 'ai-bars':barsOverride('ai-override-bars') && $('notation').value !== 'chord',
+    'ai-review-override':!!state?.ai && state.notation !== 'chord', 'ai-review-bars':!!state?.ai && barsOverride('ai-review-override') && state.notation !== 'chord',
+    'ai-merge-rests':!!state?.ai && barsOverride('ai-review-override') && state.notation !== 'chord',
+    'ai-apply-layout':!!state?.ai, 'ai-preview':!!state?.ai && !!state?.lines.length,
+    'ai-edit-text':!!state?.ai, 'ai-edit-apply':!!state?.ai && !!$('ai-edit-text').value.trim(),
   };
   for (const [id, enabled] of Object.entries(conditions)) $(id).disabled = locked || !enabled;
   $('seek').disabled = locked || !loaded;
@@ -256,20 +371,73 @@ listen('open-project','click', () => choose('project'));
 listen('video-file','change', e => upload(e.target.files[0], 'video'));
 listen('project-file','change', e => upload(e.target.files[0], 'project'));
 listen('load-video','click', loadVideo);
-for (const mode of ['automatic','manual','free']) listen(mode,'click', async () => {
+for (const mode of ['automatic','ai','manual']) listen(mode,'click', async () => {
   video.pause(); selected = 0;
   await command('mode', {mode});
   if (mode === 'manual') setReviewAudio(true);
-  if (mode === 'manual' && !state.lines.length && state.video) video.currentTime = 0;
 });
+listen('ai-select-area','change', render);
+listen('ai-method','change', () => { if (state) render(); });
+listen('ai-line-transcribe','click', () => { video.pause(); return command('ai-line-transcribe', {index:selected, ...aiConnectionPayload()}); });
 listen('detect','click', () => { video.pause(); return command('detect', {time:video.currentTime, layout:$('layout').value, notation:$('notation').value}); });
-listen('notation','change', () => { if (state?.video) { video.pause(); return command('detect', {time:video.currentTime, layout:$('layout').value, notation:$('notation').value}); } });
+listen('detect-tempo','click', () => { video.pause(); return command('detect-tempo'); });
+listen('bpm','input', () => { $('tempo-result').hidden = true; });
+listen('notation','change', async () => {
+  if (state) render();
+  // Automatic capture re-detects the score area for the chosen instrument.
+  if (state?.video && state.mode === 'automatic' && $('notation').value !== 'chord') {
+    video.pause();
+    await command('detect', {time:video.currentTime, layout:$('layout').value, notation:$('notation').value});
+  }
+});
+listen('notation','change', () => { $('ai-bars-note').textContent = $('notation').value === 'chord' ? 'Chord and lyric sheets preserve visible text rows; musical bar counts do not apply.' : "Off: follow the video's original row breaks. Uncertain breaks are reported for review."; updateControls(); });
+listen('ai-provider','change',aiConnection);
+listen('ai-check','click',()=>command('ai-check',{provider:$('ai-provider').value}));
+for (const id of ['ai-override-bars','ai-review-override']) listen(id,'click',()=>{
+  showBarsToggle(id, !barsOverride(id));
+  // Rearranged rows merge rest runs by default; following the video never does.
+  if (id === 'ai-review-override' && barsOverride(id)) $('ai-merge-rests').checked = true;
+  updateControls();
+});
+listen('ai-show-info','change',updateControls);
+listen('ai-song-info','input',()=>{$('ai-show-info').checked=!!$('ai-song-info').value;});
+listen('ai-apply-layout','click',()=>command('ai-layout',{layout:aiPageSettings()}));
+listen('ai-edit-text','input',updateControls);
+listen('ai-edit-apply','click', async () => {
+  const text = $('ai-edit-text').value.trim();
+  if (!text) return;
+  video.pause(); job = 'ai-edit';
+  try { await command('ai-edit', {text, ...aiConnectionPayload()}); if (!state?.busy) job = null; }
+  catch (error) { job = null; throw error; }
+});
+listen('ai-preview','click',()=>{job='print-preview';return command('ai-preview',{layout:aiPageSettings(),paper:$('paper').value,left:$('left-margin').value,right:$('right-margin').value});});
 listen('extract','click', async () => {
   video.pause(); setReviewAudio(false); job = 'extract';
-  await command('extract', {interval:$('interval').value, threshold:$('threshold').value, start:$('start').value,
-    end:$('end').value, overlap:true, notation:$('notation').value});
+  extractionProjectId = state.projectId;
+  try {
+    await command('extract', {interval:$('interval').value, threshold:$('threshold').value, start:$('start').value,
+      end:$('end').value, overlap:true, layout:$('layout').value, notation:$('notation').value,
+      bpm:$('bpm').value ? Number($('bpm').value) : null, beatsPerBar:Number($('beats-per-bar').value) || 4,
+      timingRepeats:$('timing-repeats').checked, flexibleArea:$('flexible-area').checked});
+    if (!state.busy && !state.error && state.lines.length && state.projectId !== extractionProjectId) {selected=0;switchTab('review');job=null;}
+  } catch(error) {job=null;throw error;}
+});
+listen('ai-extract','click', async () => {
+  if (barsOverride('ai-override-bars') && !$('ai-bars').reportValidity()) return;
+  video.pause(); setReviewAudio(false); job = 'extract';
+  extractionProjectId = state.projectId;
+  try {
+    await command('ai-extract', {...aiConnectionPayload(), method:$('ai-method').value,
+      interval:$('interval').value, threshold:$('threshold').value, start:$('start').value, end:$('end').value, overlap:true,
+      instrument:$('notation').value === 'staff' ? 'drums' : $('notation').value,
+      bars:barsOverride('ai-override-bars') && $('notation').value !== 'chord' ? Number($('ai-bars').value) : 0,
+      instructions:$('ai-instructions').value,
+      crop:$('ai-select-area').checked ? cropArray(state.region) : null});
+    if (!state.busy && !state.error && state.lines.length && state.projectId !== extractionProjectId) {selected=0;switchTab('review');job=null;}
+  } catch(error) {job=null;throw error;}
 });
 listen('cancel','click', () => command('cancel'));
+listen('pause-ai','click', () => command(state.aiPause?.requested ? 'resume-ai' : 'pause-ai'));
 listen('play','click', togglePlayback);
 listen('review-play','click', togglePlayback);
 for (const id of ['speed','review-speed']) listen(id,'change', () => {
@@ -304,7 +472,17 @@ listen('add-line','click', async () => { selected = state.lines.length; await co
 listen('seek','input', () => { video.pause(); video.currentTime = Number($('seek').value); $('current-time').textContent = clock(video.currentTime,true); });
 video.addEventListener('timeupdate', () => { $('seek').value = video.currentTime; $('current-time').textContent = clock(video.currentTime,true); });
 video.addEventListener('loadedmetadata', () => { video.playbackRate = Number($('speed').value); video.currentTime = state.mode === 'manual' ? 0 : Math.min(20, state.duration*.1); fitVideo(); });
-for (const event of ['loadeddata','seeked','seeking','play','pause','ended']) video.addEventListener(event, () => { $('play').textContent = $('review-play').textContent = video.paused ? '▶ Play' : 'Ⅱ Pause'; updateControls(); });
+function playbackButtons() {
+  for (const id of ['play','review-play']) {
+    const icon = document.createElement('span');
+    icon.className = `playback-icon ${video.paused ? 'play-icon' : 'pause-icon'}`;
+    icon.setAttribute('aria-hidden','true');
+    const label = document.createElement('span'); label.textContent = video.paused ? 'Play' : 'Pause';
+    $(id).replaceChildren(icon,label);
+  }
+}
+playbackButtons();
+for (const event of ['loadeddata','seeked','seeking','play','pause','ended']) video.addEventListener(event, () => { playbackButtons(); updateControls(); });
 video.addEventListener('loadeddata', () => { mediaLoading = false; updateControls(); fitVideo(); });
 video.addEventListener('error', () => { mediaLoading = false; updateControls(); if (video.getAttribute('src')) fail('This video could not be played. Reload it or try an H.264 MP4 file.'); });
 listen('pdf-title','input', () => { titleDirty = true; });
@@ -313,6 +491,14 @@ listen('for-print','click', () => {
   $('left-margin').value = $('right-margin').value = '12';
 });
 listen('include-line','click', () => command('remove', {index:selected}));
+listen('duplicate-line','click', async () => {
+  const index = selected;
+  await command('duplicate', {index});
+  selected = index + 1;
+  renderSelection();
+  updateControls();
+  $('line-list').children[selected]?.scrollIntoView({block:'nearest'});
+});
 listen('undo-line','click', async () => {
   selected = state.undoIndex;
   await command('undo');
@@ -321,7 +507,7 @@ for (const [id,direction] of [['move-up',-1],['move-down',1]]) listen(id,'click'
   const index = selected; selected += direction;
   try { await command('move', {index,direction}); } catch (error) { selected = index; throw error; }
 });
-listen('save-project','click', () => { video.pause(); job = 'save'; return command('save', {title:$('pdf-title').value}); });
+listen('save-project','click', () => { video.pause(); job = 'save'; return command('save', {title:$('pdf-title').value, aiLayout:state.ai ? aiPageSettings() : null}); });
 async function setPrintSettings() {
   if ($('reflow-bars').checked && !$('bars-per-line').reportValidity()) return;
   await command('print-settings',{bars:$('reflow-bars').checked?Number($('bars-per-line').value):0});
@@ -349,11 +535,12 @@ listen('preview-print','click',()=>{video.pause();job='print-preview';return com
   function showPrintPreview() {
   const preview=state.printPreview;
   if (!preview) return;
-  $('print-preview-summary').textContent=`${preview.widths.length} print lines`;
+  $('print-preview-title').textContent=preview.pages ? 'Preview PDF' : 'Print lines';
+  $('print-preview-summary').textContent=`${preview.widths.length} ${preview.pages ? 'PDF pages' : 'print lines'}`;
   $('print-preview-notes').replaceChildren(...preview.notes.map(note=>{const p=document.createElement('p');p.textContent=note;return p;}));
   $('print-preview-rows').replaceChildren(...preview.widths.map((width,index)=>{
     const row=document.createElement('div'), label=document.createElement('span'), img=document.createElement('img');
-    label.textContent=`Line ${String(index+1).padStart(2,'0')}`;
+    label.textContent=`${preview.pages ? 'Page' : 'Line'} ${String(index+1).padStart(2,'0')}`;
       img.src=api.url('print-row',{index,id:preview.id});img.alt=label.textContent;img.loading='lazy';img.style.width=`${width*100}%`;
       [img.width,img.height]=preview.sizes[index];
       const header=document.createElement('div');header.className='print-row-header';header.append(label);
@@ -385,7 +572,7 @@ listen('preview-print','click',()=>{video.pause();job='print-preview';return com
     }
 }
 listen('export-pdf','click', () => { video.pause(); job = 'export'; return command('export', {title:$('pdf-title').value, paper:$('paper').value,
-  gap:$('gap').value, left:$('left-margin').value, right:$('right-margin').value}); });
+  gap:$('gap').value, left:$('left-margin').value, right:$('right-margin').value, aiLayout:state.ai ? aiPageSettings() : null}); });
 listen('edit-line','click', () => {
   editorIndex = selected;
   const line = state.lines[selected];

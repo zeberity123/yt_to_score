@@ -24,6 +24,13 @@ class ScoreLine:
     original_path: str | None = None
     original_crop: list[float] | None = None
     height_scale: float = 1.0
+    visible_until: float | None = None
+    raw_source_path: str | None = None
+    bar_bounds: list[int] | None = None
+    bar_numbers: list[int] | None = None
+    bar_staff: list[float] | None = None
+    ai_bar_ids: list[int] | None = None
+    notes: list[str] | None = None  # AI line-check findings shown in review
 
 
 @dataclass
@@ -38,12 +45,15 @@ class Extraction:
     bars_per_line: int = 0
     bar_overrides: dict[str, int] = field(default_factory=dict)
     background: str = 'white'
+    ai_score: dict | None = None
+    ai_check: dict | None = None  # AI-checked capture: recon meta, per-line findings, usage
 
     def save(self):
         data = {"version": 1, "title": self.title, "source": self.source,
                 "region": asdict(self.region), "lines": [asdict(line) for line in self.lines],
                 "warnings": self.warnings, "notation": self.notation, "bars_per_line": self.bars_per_line,
-                "bar_overrides": self.bar_overrides, "background": self.background}
+                "bar_overrides": self.bar_overrides, "background": self.background, "ai_score": self.ai_score,
+                "ai_check": self.ai_check}
         temp = self.directory / "project.tmp"
         try:
             temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -63,12 +73,19 @@ class Extraction:
             else warning for warning in data.get('warnings', [])]
         return cls(filename.parent, data["title"], data["source"], Region(**data["region"]),
                    [ScoreLine(**line) for line in data["lines"]], warnings, data.get('notation', 'staff'),
-                   data.get('bars_per_line', 0), data.get('bar_overrides', {}), data.get('background', 'white'))
+                   data.get('bars_per_line', 0), data.get('bar_overrides', {}), data.get('background', 'white'), data.get('ai_score'),
+                   data.get('ai_check'))
 
 
 def extract(path, destination, title="Sheet music", source="", region=None, mode="auto",
             interval=.5, threshold=.035, start=0, end=None, progress=lambda *args: None, cancel=None,
-            remove_overlap=True, notation='staff'):
+            remove_overlap=True, notation='staff', bpm=None, beats_per_bar=4, timing_repeats=False,
+            flexible_area=False):
+    if timing_repeats:
+        from .tempo import validate_timing
+        bpm, beats_per_bar = validate_timing(bpm, beats_per_bar)
+        if mode == 'free':
+            raise ValueError('Timing recovery requires staff or TAB notation.')
     if mode == 'free':
         from .free import extract_free
         return extract_free(path, destination, title, source, region, interval, threshold,
@@ -92,6 +109,18 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
             crop = auto_region(frame, mode, notation)
             candidates.append((len(find_groups(clean(crop.crop(frame)))), crop))
         region = max(candidates, key=lambda item: item[0])[1]
+    numbered_fallback = False
+    if notation == 'bass' and remove_overlap:
+        from .numbered import is_numbered_video, extract_numbered
+        if is_numbered_video(path,region,start,end,cancel):
+            progress('Inspecting numbered TAB bars at video frame rate',0)
+            recovered = extract_numbered(path,destination,title,source,region,start,end,progress,cancel)
+            if recovered is not None:
+                if timing_repeats:
+                    recovered.warnings.append('Timing recovery skipped: numbered-bar tracking already determines the sequence.')
+                    recovered.save()
+                return recovered
+            numbered_fallback = True
     directory = Path(destination) / ("score_"+uuid.uuid4().hex[:10])
     directory.mkdir(parents=True)
     project = Extraction(directory, title, source or str(path), region, [], [], notation)
@@ -142,6 +171,10 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
                 if compare_systems(a,b) < .035:
                     overlap = 1
             overlap_count += overlap
+            if overlap == 1 and len(strips) == 1 and project.lines:
+                previous = project.lines[-1]
+                if previous.visible_until is not None and abs(previous.visible_until-current['time']) <= interval*1.1:
+                    previous.visible_until = current['until']
             # Keep the accepted anchor when discarding a nudged single panel.
             # Otherwise repeated tiny shifts could hide a genuinely scrolling view.
             if not (overlap == 1 and len(systems) == 1):
@@ -156,6 +189,8 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
                     cut = overlap_cut(previous_panel,panel,rules)
                     if cut and cut[0] > previous_left:
                         previous_line = project.lines[-1]
+                        previous_line.visible_until = None
+                        current['until'] = None
                         Image.fromarray(previous_panel[:, previous_left:cut[0]+1]).save(directory/previous_line.path)
                         previous_line.crop[2] = previous_line.crop[0] + (cut[0]+1-previous_left)/current['frame'].shape[1]
                         previous_line.original_crop = previous_line.crop.copy()
@@ -167,12 +202,14 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
                 else:
                     tab_panel = (panel, 0)
             context_name = f"source_{view_number:04d}.png"
+            raw_name = f"raw_source_{view_number:04d}.png"
             fh, fw = current["frame"].shape[:2]
-            rx, ry = int(region.left*fw), int(region.top*fh)
+            rx, ry = int(current['region'].left*fw), int(current['region'].top*fh)
             context = clean_score(current['frame'])
             if notation != 'staff':
                 context[ry:ry+image.shape[0], rx:rx+image.shape[1]] = image
             Image.fromarray(context).save(directory / context_name)
+            Image.fromarray(current['frame'][:,:,::-1]).save(directory / raw_name)
             for strip, bounds in segments[overlap:]:
                 name = f"line_{len(project.lines)+1:04d}.png"
                 Image.fromarray(strip).save(directory / name)
@@ -180,17 +217,24 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
                 crop = [(rx+x0)/fw, (ry+y0)/fh, (rx+x1)/fw, (ry+y1)/fh]
                 project.lines.append(ScoreLine(name, current["time"], view_number,
                                               source_path=context_name, crop=crop,
-                                              original_path=name, original_crop=crop.copy()))
+                                              original_path=name, original_crop=crop.copy(),
+                                              visible_until=current['until'] if len(strips) == 1 else None,
+                                              raw_source_path=raw_name))
         current = None
 
     iterator = frames(path, interval, start, end, cancel)
     try:
         for t, frame in iterator:
             check_cancel(cancel)
-            gray = clean(region.crop(frame))
+            active_region = region
+            if flexible_area and mode != 'page':
+                from .notation import follow_region
+                active_region = follow_region(frame, region, notation)
+            gray = clean(active_region.crop(frame))
             sig = notation_signature(gray,notation) if paired else tab_signature(gray) if notation == 'guitar' else signature(gray)
-            if current is not None and difference(current["signature"], sig, fine=current['fine'], stable=current['stable']) <= threshold:
+            if current is not None and gray.shape == current['samples'][0].shape and difference(current["signature"], sig, fine=current['fine'], stable=current['stable']) <= threshold:
                 current["count"] += 1
+                current['until'] = min(end, t+interval)
                 # A small reservoir spreads the median across the entire stable view.
                 if len(current["samples"]) < 9:
                     current["samples"].append(gray.copy())
@@ -202,11 +246,11 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
                 flush()
                 if find_groups(gray):
                     tab_only = notation == 'guitar' or (notation == 'bass' and not staffs(gray))
-                    current = {"signature": sig, "samples": [gray.copy()], "count": 1, "time": t,
-                               "frame": frame.copy(),
+                    current = {"signature": sig, "samples": [gray.copy()], "count": 1, "time": t, 'until': min(end,t+interval),
+                               "frame": frame.copy(), 'region': active_region,
                                # Translucent white-on-video TAB needs the same
                                # speckle tolerance as moving drum-score panels.
-                               "fine": tab_only and np.mean(region.crop(frame) > 200) > .55,
+                               "fine": tab_only and np.mean(active_region.crop(frame) > 200) > .55,
                                # HD retains enough pixels to reject narrow noise
                                # while still checking individual fret changes.
                                "stable": tab_only and gray.shape[1] >= 1500}
@@ -218,6 +262,8 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
         raise ValueError("No stable score lines found. Adjust the crop, choose another preview time, or lower the sample interval.")
     if rejected:
         project.warnings.append(f"Skipped {rejected} unstable sampled views (transitions or views shorter than two samples). Review for missing lines; use a smaller sample interval if needed.")
+    if numbered_fallback:
+        project.warnings.append('Numbered bars could not be followed reliably. Review captures for overlaps or use Manual mode.')
     if overlap_count:
         project.warnings.append(f"Removed {overlap_count} matching lines at consecutive page boundaries. Disable page-overlap removal if these are intentional repeats.")
     if tab_joins:
@@ -225,6 +271,10 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
     if notation in ('guitar','bass'):
         project.warnings.append('Check partial measures at TAB panel edges. Uncertain overlaps are kept; use Edit crop to adjust them. Continuously moving TAB may require manual capture.')
     project.warnings.append("Review the lines before printing. Continuous scrolling, animated notation, and identical consecutive score views may need manual capture or editing.")
+    if timing_repeats:
+        from .tempo import recover_timed_repeats
+        progress('Checking identical repeats using timing', .99)
+        recover_timed_repeats(project, bpm, beats_per_bar, interval)
     project.save()
     progress(f"Ready: {len(project.lines)} lines from {view_number} score views", 1)
     return project

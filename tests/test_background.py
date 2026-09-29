@@ -4,7 +4,7 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from drumscore.background import render_background
+from drumscore.background import render_background, line_image
 from drumscore.editing import archive_project, open_project
 from drumscore.extract import Extraction, ScoreLine
 from drumscore.print_layout import print_rows, tab_measures
@@ -40,8 +40,8 @@ def test_background_setting_roundtrip_default_and_rendering(tmp_path):
     assert project.background == 'white'
     before = (tmp_path/'line.png').read_bytes()
     workspace = Workspace(tmp_path/'workspace')
-    workspace.projects['free'] = project
-    workspace.mode = 'free'
+    workspace.projects['automatic'] = project
+    workspace.mode = 'automatic'
     workspace.command('background', {'background':'black'})
     assert workspace.state()['background'] == 'black'
     rows, _ = print_rows(project)
@@ -64,6 +64,27 @@ def test_manual_margin_after_final_bar_is_not_an_extra_measure():
     cuts, _, _ = tab_measures(padded,6)
     assert len(cuts) == 2
     np.testing.assert_array_equal(np.concatenate([np.array(padded)[:,a:b] for a,b in cuts],axis=1), padded)
+
+
+def test_raw_video_colors_survive_archive_duplicate_crop_and_rendering(tmp_path):
+    from drumscore.editing import duplicate_line, edit_line
+    source=np.random.default_rng(4).integers(0,255,(200,400,3),dtype=np.uint8)
+    Image.fromarray(source).save(tmp_path/'raw.png')
+    Image.new('RGB',(400,200),'white').save(tmp_path/'clean.png')
+    line=ScoreLine('clean.png',2,1,source_path='clean.png',raw_source_path='raw.png',
+                   crop=[0,0,1,1],original_path='clean.png',original_crop=[0,0,1,1])
+    project=Extraction(tmp_path,'Raw','',Region(),[line],[],'bass')
+    assert np.all(np.array(line_image(project,line))==255)
+    project.background='original'
+    np.testing.assert_array_equal(line_image(project,line),source)
+    duplicate_line(project,0)
+    edit_line(project,1,[.25,.25,.75,.75])
+    np.testing.assert_array_equal(line_image(project,project.lines[1]),source[50:150,100:300])
+    reopened=open_project(archive_project(project,tmp_path/'raw.drumscore'),tmp_path/'opened')
+    np.testing.assert_array_equal(print_rows(reopened)[0][1].image,source[50:150,100:300])
+    assert reopened.lines[0].raw_source_path==reopened.lines[1].raw_source_path
+    project.background='black'
+    assert np.all(np.array(line_image(project,line))==0)
 
 
 def test_user_tuki_archive_reflows_all_29_captures(tmp_path):

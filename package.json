@@ -1,6 +1,6 @@
 {
   "name": "drum-sheet-workspace",
-  "version": "0.11.0",
+  "version": "0.17.0",
   "private": true,
   "description": "A local video-to-sheet-music PDF workspace with a shared web interface.",
   "main": "desktop/main.cjs",
@@ -8,6 +8,9 @@
   "scripts": {
     "start": "electron .",
     "test:desktop": "node scripts/test-desktop.cjs",
+    "test:duplicate": "node scripts/test-duplicate.cjs",
+    "test:tempo": "node scripts/test-tempo.cjs",
+    "test:cleanup": "node scripts/test-cleanup.cjs",
     "test:playback": "node scripts/test-playback.cjs",
     "test:portable": "node scripts/test-portable.cjs",
     "build:win": "node scripts/build-windows.cjs",
@@ -16,7 +19,8 @@
     "test:free": "node scripts/test-free-desktop.cjs",
     "test:instruments": "node scripts/test-instruments-desktop.cjs",
     "test:loading": "node scripts/test-loading.cjs",
-    "test:print-layout": "node scripts/test-print-layout.cjs"
+    "test:print-layout": "node scripts/test-print-layout.cjs",
+    "test:ai": "node scripts/test-ai-integrated.cjs"
   },
   "devDependencies": {
     "electron": "44.4.5",
@@ -64,7 +68,7 @@
       "icon": "build/assets/app.ico",
       "signExecutable": false
     },
-    "artifactName": "Video-Sheet-to-PDF-${version}-win-x64.exe",
+    "artifactName": "Video-Sheet-to-PDF-AI-${version}-win-x64.exe",
     "portable": {
       "requestExecutionLevel": "user"
     },

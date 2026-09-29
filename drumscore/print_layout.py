@@ -9,7 +9,7 @@ from PIL import Image
 
 from .editing import project_file
 from .vision import staffs, runs
-from .background import render_background
+from .background import line_image
 
 
 @dataclass
@@ -124,8 +124,17 @@ def print_rows(project,bars_per_line=None):
             raise ValueError('Line height must be 25-200%.')
         with Image.open(project_file(project,line.path)) as source:
             image=source.convert('RGB')
-        measures=tab_measures(image,6 if project.notation=='guitar' else 4) if target else None
-        image=render_background(image,project.notation,project.background)
+        measures=None
+        # Recovered bars already have verified identities and cuts. Re-detecting
+        # faint pixel barlines here can silently merge two bars into one.
+        if target and line.bar_bounds and line.bar_staff and line.crop == line.original_crop:
+            bounds=line.bar_bounds
+            if (bounds[0] == 0 and bounds[-1] == image.width and all(b>a for a,b in zip(bounds,bounds[1:]))
+                    and len(line.bar_staff)==2 and line.bar_staff[1]>0):
+                measures=(list(zip(bounds,bounds[1:])),*line.bar_staff)
+        if target and measures is None:
+            measures=tab_measures(image,6 if project.notation=='guitar' else 4)
+        image=line_image(project,line)
         if not measures:
             flush()
             rows.append(PrintRow(image,scale))

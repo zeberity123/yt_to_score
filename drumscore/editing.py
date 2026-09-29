@@ -1,5 +1,6 @@
 """Non-destructive line edits and portable, title-named project files."""
 from dataclasses import asdict
+from copy import deepcopy
 from pathlib import Path
 import re
 import shutil
@@ -27,6 +28,39 @@ def project_file(project, name):
     return path
 
 
+def duplicate_line(project, index):
+    """Insert an independently editable copy immediately after the selected line."""
+    if not 0 <= index < len(project.lines):
+        raise ValueError('Select a score line first.')
+    line = deepcopy(project.lines[index])
+    # Separate image identities also keep print-layout overrides independent.
+    copied = []
+    names = {}
+    try:
+        for attribute in ('path', 'original_path'):
+            source = getattr(line, attribute)
+            if not source:
+                continue
+            if source not in names:
+                name = 'duplicate_' + uuid.uuid4().hex[:12] + '.png'
+                target = project.directory / name
+                copied.append(target)
+                shutil.copyfile(project_file(project, source), target)
+                names[source] = name
+            setattr(line, attribute, names[source])
+        project.lines.insert(index + 1, line)
+        try:
+            project.save()
+        except Exception:
+            project.lines.pop(index + 1)
+            raise
+    except Exception:
+        for target in copied:
+            target.unlink(missing_ok=True)
+        raise
+    return line
+
+
 def edit_line(project, index, crop=None, reset=False, *, height_scale=None, all_heights=False):
     line = project.lines[index]
     old = asdict(line)
@@ -34,6 +68,8 @@ def edit_line(project, index, crop=None, reset=False, *, height_scale=None, all_
     new_path = None
     try:
         if reset:
+            if line.ai_bar_ids and line.original_path and line.original_path != line.path:
+                line.ai_bar_ids = None  # back to the captured row, not the AI engraving
             line.path = line.original_path or line.path
             line.crop = line.original_crop.copy() if line.original_crop else None
             line.height_scale = 1.0
@@ -77,7 +113,7 @@ def archive_project(project, destination):
     destination.parent.mkdir(parents=True, exist_ok=True)
     files = {'project.json'}
     for line in project.lines:
-        files.update(p for p in (line.path, line.source_path, line.original_path) if p)
+        files.update(p for p in (line.path, line.source_path, line.original_path, line.raw_source_path) if p)
     with tempfile.NamedTemporaryFile(dir=destination.parent, suffix='.tmp', delete=False) as handle:
         temporary = Path(handle.name)
     try:
@@ -115,7 +151,7 @@ def open_project(filename, destination):
             shutil.rmtree(directory)
             raise
     for line in project.lines:
-        for name in (line.path, line.source_path, line.original_path):
+        for name in (line.path, line.source_path, line.original_path, line.raw_source_path):
             if name:
                 project_file(project, name)
     return project

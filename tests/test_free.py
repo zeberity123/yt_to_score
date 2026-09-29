@@ -77,13 +77,15 @@ def test_free_roundtrip_edit_export_and_mode_isolation(tmp_path):
     assert export_pdf(restored, tmp_path/'free.pdf') == 1
     workspace = Workspace(tmp_path/'workspace')
     workspace.command('open', {'path': str(archive)})
-    assert workspace.mode == workspace.notation == 'free'
+    # Chord capture is an Automatic-mode instrument; the project keeps its 'free' notation.
+    assert workspace.mode == 'automatic' and workspace.notation == 'chord'
     workspace.command('remove', {'index': 0})
-    workspace.command('mode', {'mode': 'automatic'})
+    workspace.command('mode', {'mode': 'ai'})
     assert workspace.project is None and not workspace.state()['canUndo']
     workspace.command('mode', {'mode': 'manual'})
     assert workspace.project is None
-    workspace.command('mode', {'mode': 'free'})
+    workspace.command('mode', {'mode': 'free'})  # older alias lands on Automatic
+    assert workspace.mode == 'automatic'
     workspace.command('undo', {})
     assert len(workspace.project.lines) == 2
 

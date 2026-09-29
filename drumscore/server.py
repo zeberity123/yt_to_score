@@ -19,18 +19,28 @@ from zipfile import BadZipFile
 
 import cv2
 
-from .editing import archive_project, edit_line, open_project, project_file, safe_name
+from .editing import archive_project, duplicate_line, edit_line, open_project, project_file, safe_name
 from .extract import extract
 from .manual import append_line, new_manual_project
 from .pdf import export_pdf
 from .print_layout import print_rows, validate_bars, validate_bar_override
-from .background import render_background, validate_background
+from .background import line_image, validate_background
 from .video import Cancelled, audio_codec, check_cancel, download, ffmpeg_path, metadata, preview
 from .vision import Region, auto_region
 from .notation import NOTATIONS, clean_notation, split_notation
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB = ROOT / 'web'
+# Automatic = frame capture, AI = transcription/AI-checked capture, Manual = hand-picked frames.
+MODES = ('automatic', 'ai', 'manual')
+
+
+def empty_projects():
+    return {mode: None for mode in MODES}
+
+
+def empty_removed():
+    return {mode: [] for mode in MODES}
 
 
 class Workspace:
@@ -49,19 +59,28 @@ class Workspace:
         self.revision = 0
         self.mode = 'automatic'
         self.notation = 'staff'
-        self.projects = {'automatic': None, 'manual': None, 'free': None}
+        self.projects = empty_projects()
         self.video = None
         self.video_id = None
         self.media = None
         self.duration = 0
         self.has_audio = False
+        self.tempo = None
         self.source = ''
         self.title = 'Sheet music'
         self.region = Region()
         self.artifacts = {}
-        self.removed = {'automatic': [], 'manual': [], 'free': []}
+        self.removed = empty_removed()
         self.print_preview = None
         self.print_images = []
+        self.ai_usage = None
+        self.ai_edit = None
+        self.ai_connection = ''
+        self.extraction_started = None
+        self.extraction_elapsed = None
+        self.extraction_running = False
+        self.ai_progress = None
+        self.ai_gate = None
 
     @property
     def project(self):
@@ -70,14 +89,44 @@ class Workspace:
     def state(self):
         with self.lock:
             project = self.project
-            return {'busy': self.busy, 'status': self.status, 'error': self.error,
+            status = self.status
+            pause = self.ai_gate.state() if self.ai_gate else None
+            if self.extraction_running and self.ai_progress and not self.cancel.is_set():
+                status = self.ai_progress['phase']
+                if self.ai_progress['total']:
+                    status += (f" · {self.ai_progress['completed']}/{self.ai_progress['total']} batches completed"
+                               f" · {self.ai_progress['saved']} bars/rows saved")
+                age = int(time.monotonic()-self.ai_progress['updated'])
+                if age >= 10:
+                    status += f' · {age//60:02d}:{age%60:02d} since last update'
+            if self.extraction_running and pause and pause['requested'] and not self.cancel.is_set():
+                status = (f"Pausing · {pause['active']} AI request(s) finishing. No new requests will start."
+                          if pause['active'] else 'Paused. No AI requests are running. Click Resume to continue.')
+            return {'busy': self.busy, 'status': status, 'error': self.error,
                     'progress': self.progress, 'revision': self.revision, 'mode': self.mode,
                     'title': self.title, 'video': bool(self.media), 'videoId': self.video_id,
                     'projectId': project.directory.name if project else None, 'duration': self.duration,
                     'hasAudio': self.has_audio, 'notation': self.notation,
+                    'tempo': self.tempo,
+                    'ai': bool(project and project.ai_score),
+                    'aiLayout': project.ai_score.get('layout') if project and project.ai_score else None,
+                    'aiCheck': ({'method': project.ai_check.get('method', 'images'),
+                                 'flagged': sum(1 for line in project.lines if line.notes),
+                                 'observations': project.ai_check.get('observations', [])}
+                                if project and project.ai_check else None),
+                    'aiUsage': dict(self.ai_usage) if self.ai_usage else (
+                        (project.ai_score or project.ai_check).get('usage') if project and (project.ai_score or project.ai_check) else None),
+                    'aiConnection': self.ai_connection,
+                    'aiEdit': self.ai_edit,
+                    'aiPause': pause if self.extraction_running and not self.cancel.is_set() else None,
+                    'aiProgress': {k: v for k, v in self.ai_progress.items() if k != 'updated'} if self.ai_progress else None,
+                    'elapsedSeconds': (time.monotonic()-self.extraction_started-(pause['seconds'] if pause else 0) if self.extraction_running
+                                       else self.extraction_elapsed),
                     'canUndo': bool(self.removed[self.mode]),
                     'barsPerLine': project.bars_per_line if project else 0,
                     'background': project.background if project else 'white',
+                    'originalMissing': sum(not line.raw_source_path and line.view != 0 for line in project.lines)
+                        if project and project.notation not in ('free','chord') else 0,
                     'printPreview': self.print_preview,
                     'undoIndex': self.removed[self.mode][-1][0] if self.removed[self.mode] else None,
                     'region': asdict(self.region), 'source': Path(self.video).name if self.video else '',
@@ -90,23 +139,43 @@ class Workspace:
             if fraction is not None:
                 self.progress = fraction
 
-    def start(self, task):
+    def report_ai(self, phase, completed=0, total=0, saved=0):
+        with self.lock:
+            self.ai_progress = dict(phase=phase, completed=completed, total=total, saved=saved,
+                                    updated=time.monotonic())
+            self.progress = completed/total if total else 0
+            self.status = phase
+
+    def start(self, task, *, timed=False):
         if self.busy:
             raise ValueError('Wait for the current operation or cancel it first.')
         self.busy, self.error, self.progress = True, None, 0
         self.status = 'Working…'
         self.cancel.clear()
+        if timed:
+            self.ai_progress = None
+            self.extraction_started = time.monotonic()
+            self.extraction_elapsed = 0
+            self.extraction_running = True
         def run():
             try:
                 task()
                 with self.lock:
-                    self.progress = 1
+                    if not self.cancel.is_set():
+                        self.progress = 1
             except Exception as exc:
+                from ai_score.providers import Cancelled as AICancelled
                 with self.lock:
-                    self.error = None if isinstance(exc, Cancelled) else str(exc)
-                    self.status = 'Cancelled.' if isinstance(exc, Cancelled) else str(exc)
+                    self.error = None if isinstance(exc, (Cancelled, AICancelled)) else str(exc)
+                    self.status = 'Cancelled.' if isinstance(exc, (Cancelled, AICancelled)) else str(exc)
             finally:
                 with self.lock:
+                    if timed:
+                        paused = self.ai_gate.state()['seconds'] if self.ai_gate else 0
+                        self.extraction_elapsed = time.monotonic()-self.extraction_started-paused
+                        self.extraction_running = False
+                        if self.ai_gate:
+                            self.ai_gate.resume()
                     self.busy = False
                     self.revision += 1
         threading.Thread(target=run, daemon=True).start()
@@ -163,17 +232,27 @@ class Workspace:
                 return
             if action == 'cancel':
                 self.cancel.set()
+                self.status = 'Cancelling… preserving completed work. Please wait.'
+                return
+            if action in ('pause-ai', 'resume-ai'):
+                if not self.extraction_running or not self.ai_gate or self.cancel.is_set():
+                    raise ValueError('No active AI extraction to pause or resume.')
+                self.ai_gate.pause() if action == 'pause-ai' else self.ai_gate.resume()
                 return
             if self.busy:
                 raise ValueError('Wait for the current operation or cancel it first.')
             self.error = None
-            if action in ('load','open','mode','extract','capture','add-view','remove','undo','include','move','edit','print-settings','background'):
+            if action.startswith('ai-'):
+                self.ai_command(action, data)
+                self.revision += 1
+                return
+            if action in ('load','open','mode','extract','capture','add-view','remove','duplicate','undo','include','move','edit','print-settings','background'):
                 self.print_preview=None
                 self.print_images=[]
             notation = self.notation
             if action in ('load','detect','extract'):
-                notation = 'free' if self.mode == 'free' else str(data.get('notation', self.notation))
-                if notation not in (*NOTATIONS, 'free') or (notation == 'free' and self.mode != 'free'):
+                notation = str(data.get('notation', self.notation))
+                if notation not in (*NOTATIONS, 'chord'):
                     raise ValueError('Unknown notation type.')
             if action == 'load':
                 source = str(data['source']).strip()
@@ -183,28 +262,30 @@ class Workspace:
                     _, _, duration = metadata(path)
                     sound_codec = audio_codec(path)
                     media = self.browser_media(path, sound_codec)
-                    region = Region() if mode == 'free' else auto_region(preview(path, 0 if mode == 'manual' else min(20, duration*.1)), data.get('layout', 'auto'), notation)
+                    region = Region() if mode == 'ai' or notation == 'chord' else auto_region(preview(path, 0 if mode == 'manual' else min(20, duration*.1)), data.get('layout', 'auto'), notation)
                     check_cancel(self.cancel)
                     with self.lock:
                         self.video, self.media, self.source = path, media, source
                         self.video_id = uuid.uuid4().hex
                         self.duration, self.title, self.region = duration, title, region
                         self.has_audio = sound_codec is not None
+                        self.tempo = None
                         self.notation = notation
-                        self.projects = {'automatic': None, 'manual': None, 'free': None}
-                        self.removed = {'automatic': [], 'manual': [], 'free': []}
-                        self.status = 'Video ready. Drag on the video to select your score.'
+                        self.projects = empty_projects()
+                        self.removed = empty_removed()
+                        self.ai_edit = None
+                        self.status = ('Video ready. Choose Extract with AI, or enable Select score area to drag a crop.'
+                                       if mode == 'ai' else 'Video ready. Drag on the video to select your score.')
                 self.start(task)
             elif action == 'mode':
-                if data['mode'] not in self.projects:
+                mode = 'automatic' if data['mode'] == 'free' else data['mode']  # older UI alias
+                if mode not in self.projects:
                     raise ValueError('Unknown capture mode.')
-                self.mode = data['mode']
-                if self.project and self.project.notation in (*NOTATIONS, 'free'):
-                    self.notation = self.project.notation
-                elif self.mode == 'free':
-                    self.notation = 'free'
+                self.mode = mode
+                if self.project and self.project.notation in (*NOTATIONS, 'free', 'chord'):
+                    self.notation = 'chord' if self.project.notation == 'free' else self.project.notation
                 elif self.notation == 'free':
-                    self.notation = 'staff'
+                    self.notation = 'chord'
             elif action == 'title':
                 self.title = str(data['title'])[:500]
                 if self.project:
@@ -214,25 +295,39 @@ class Workspace:
                 self.region = Region(*data['crop'])
             elif action == 'detect':
                 self.require_video()
-                if self.mode == 'free':
+                if notation == 'chord':
                     raise ValueError('Draw a rectangle around the chords and lyrics before using Chord mode.')
                 self.region = auto_region(preview(self.video, float(data['time'])), data.get('layout', 'auto'), notation)
                 self.notation = notation
+            elif action == 'detect-tempo':
+                self.require_video()
+                from .tempo import detect_tempo
+                def task():
+                    result = detect_tempo(self.video, self.report, self.cancel)
+                    check_cancel(self.cancel)
+                    with self.lock:
+                        self.tempo = dict(result, id=uuid.uuid4().hex)
+                        self.status = 'BPM estimate ready. Check the tempo and meter before enabling timing recovery.'
+                self.start(task)
             elif action == 'extract':
                 self.require_video()
+                if self.mode != 'automatic':
+                    raise ValueError('Choose Automatic mode to extract score lines.')
                 region = self.region
-                capture_mode = 'free' if self.mode == 'free' else 'automatic'
+                chord = notation == 'chord'  # Chord sheets use the text-row capture path.
                 def task():
                     project = extract(self.video, self.output, self.title, self.source, region,
-                                      mode='free' if capture_mode == 'free' else 'auto',
+                                      mode='free' if chord else 'auto',
                                       interval=float(data.get('interval', .5)), threshold=float(data.get('threshold', .035)),
                                       start=float(data.get('start', 0)), end=float(data['end']) if data.get('end') not in ('', None) else None,
                                       remove_overlap=bool(data.get('overlap', True)), progress=self.report, cancel=self.cancel,
-                                      notation=notation)
+                                      notation='free' if chord else notation, bpm=data.get('bpm') or None, beats_per_bar=data.get('beatsPerBar') or 4,
+                                      timing_repeats=bool(data.get('timingRepeats',False)),
+                                      flexible_area=bool(data.get('flexibleArea',False)))
                     with self.lock:
-                        self.projects[capture_mode] = project
-                        self.removed[capture_mode] = []
-                        self.mode = capture_mode
+                        self.projects['automatic'] = project
+                        self.removed['automatic'] = []
+                        self.mode = 'automatic'
                         self.notation = notation
                         self.status = f'{len(project.lines)} score lines ready to review.'
                 self.start(task)
@@ -253,7 +348,7 @@ class Workspace:
                     from .vision import clean_score, clean_tab, split_systems
                     from .extract import ScoreLine
                     from PIL import Image
-                    notation = self.project.notation
+                    notation = 'free' if self.project.notation == 'chord' else self.project.notation
                     crop_frame = self.region.crop(frame)
                     if notation == 'free':
                         from .free import text_mask, text_rows
@@ -284,24 +379,25 @@ class Workspace:
                     self.project.save()
                 self.status = f'{len(self.project.lines)} lines captured.'
             elif action == 'open':
-                project = open_project(data['path'], self.output)
-                mode = 'free' if project.notation == 'free' else 'automatic'
-                self.projects = {'automatic': None, 'manual': None, 'free': None}
-                self.projects[mode] = project
-                self.removed = {'automatic': [], 'manual': [], 'free': []}
-                # Older projects stored exclusions in the list. Present them as removed,
-                # while allowing Undo to bring them back under the new interaction.
-                visible = []
-                for line in project.lines:
-                    if line.included:
-                        visible.append(line)
-                    else:
-                        line.included = True
-                        self.removed[mode].append((len(visible), line))
-                project.lines = visible
+                path = Path(data['path'])
+                if path.name.endswith('.aiscore.json'):
+                    from .ai_workspace import create_project
+                    project = create_project(json.loads(path.read_text(encoding='utf-8')), self.output/('ai-import-'+uuid.uuid4().hex[:12]), str(path))
+                else:
+                    project = open_project(path, self.output)
+                if project.ai_score or getattr(project, 'ai_check', None):
+                    mode = 'ai'
+                elif project.lines and all(line.view == 0 for line in project.lines):
+                    mode = 'manual'  # only hand-picked frames
+                else:
+                    mode = 'automatic'
+                self.projects = empty_projects()
+                self.removed = empty_removed()
+                self.ai_edit = None
+                self.adopt(mode, project)
                 self.mode, self.title = mode, project.title
                 self.region = project.region
-                self.notation = project.notation if project.notation in (*NOTATIONS, 'free') else 'staff'
+                self.notation = 'chord' if project.notation == 'free' else project.notation if project.notation in (*NOTATIONS, 'chord') else 'staff'
                 self.video = self.media = None
                 self.video_id = None
                 self.duration = 0
@@ -377,7 +473,7 @@ class Workspace:
                                               'overrides':[project.bar_overrides.get(row.anchor,0) for row in rows]}
                         self.status=f'{len(rows)} print lines ready.'
                 self.start(task)
-            elif action in ('remove', 'undo', 'include', 'move', 'edit', 'save', 'export'):
+            elif action in ('remove', 'duplicate', 'undo', 'include', 'move', 'edit', 'save', 'export'):
                 if not self.project:
                     raise ValueError('Capture lines or open a project first.')
                 project = self.project
@@ -395,6 +491,9 @@ class Workspace:
                         raise
                     history.pop()
                     self.status = 'Line restored.'
+                elif action == 'duplicate':
+                    duplicate_line(project, int(data['index']))
+                    self.status = 'Line duplicated. Move the copy to the desired position.'
                 elif action == 'remove':
                     index = int(data['index'])
                     if not 0 <= index < len(project.lines):
@@ -431,11 +530,18 @@ class Workspace:
                     destination = self.export_root/key/(safe_name(title)+suffix)
                     def task():
                         try:
+                            if project.ai_score and data.get('aiLayout'):
+                                from .ai_workspace import update_layout
+                                update_layout(project, data['aiLayout'])
                             if action == 'save':
                                 archive_project(project, destination)
                             else:
                                 project.save()
-                                export_pdf(project, destination, paper=data.get('paper', 'A4'),
+                                exporter = export_pdf
+                                if project.ai_score:
+                                    from .ai_workspace import export_ai
+                                    exporter = export_ai
+                                exporter(project, destination, paper=data.get('paper', 'A4'),
                                            gap_mm=float(data.get('gap', 0)), left_margin_mm=float(data.get('left', 3)),
                                            right_margin_mm=float(data.get('right', 3)))
                         except Exception:
@@ -451,9 +557,202 @@ class Workspace:
                 raise ValueError('Unknown action.')
             self.revision += 1
 
+    def ai_client(self, provider, data, folder):
+        """A subscription/API client for one job, wired to this workspace's cancel, pause and progress."""
+        from ai_score.providers import Client, PROVIDERS
+        from ai_score.control import RequestGate
+        model = str(data.get('model') or PROVIDERS[provider]['model'])
+        key = str(data.get('apiKey', ''))
+        if provider not in ('Codex', 'Claude CLI') and not key.strip():
+            raise ValueError('Enter an API key for the selected provider.')
+        client = Client(provider, model, key, folder, self.cancel, lambda msg: self.report(msg), budget=None, max_requests=None)
+        self.ai_gate = client.gate = RequestGate()
+        self.ai_usage = client.usage
+        client.progress = self.report_ai
+        return client
+
+    def ai_command(self, action, data):
+        from ai_score.providers import PROVIDERS, login_status, claude_login_status
+        from .ai_workspace import create_project, update_layout, export_ai, pdf_images, apply_ai_edit
+        provider = str(data.get('provider', 'Codex'))
+        if provider not in PROVIDERS:
+            raise ValueError('Choose a supported AI connection.')
+        if action == 'ai-check':
+            def task():
+                if provider == 'Codex':
+                    status = login_status()
+                elif provider == 'Claude CLI':
+                    status = claude_login_status()
+                else:
+                    status = f'{provider} uses a separate API key and API billing. The key is only kept in memory; connectivity is checked on extraction.'
+                with self.lock:
+                    self.ai_connection = self.status = status
+            self.start(task)
+        elif action == 'ai-extract':
+            self.require_video()
+            instrument = str(data.get('instrument', 'drums'))
+            if instrument not in ('drums', 'bass', 'guitar', 'piano', 'chord'):
+                raise ValueError('Choose a supported instrument.')
+            bars = int(data.get('bars', 0))
+            if not 0 <= bars <= 16:
+                raise ValueError('Bars per line must be 1–16 or disabled.')
+            method = str(data.get('method', 'notation'))
+            if method not in ('images', 'notation'):
+                raise ValueError('Choose an AI method.')
+            capture_options = {key: data.get(key) for key in ('interval', 'threshold', 'start', 'end', 'overlap')}
+            import hashlib
+            from ai_score.pipeline import validate_crop
+            selected_crop = validate_crop(data.get('crop'))
+            job_identity = f'{self.video}:{instrument}'
+            if selected_crop:
+                job_identity += json.dumps(selected_crop)
+            identity = hashlib.sha256(job_identity.encode()).hexdigest()[:16]
+            folder = self.output/'ai-jobs'/identity
+            client = self.ai_client(provider, data, folder/'responses')
+            path, source, title = self.video, self.source, self.title
+            def task():
+                from ai_score.pipeline import extract as ai_extract, cancelled_draft
+                from ai_score.providers import Cancelled as AICancelled, write_json
+                if method == 'images':
+                    from ai_score.hybrid import extract_images
+                    try:
+                        project = extract_images(client, str(path), instrument, folder, title, source, self.output,
+                                                 selected_crop, options=capture_options)
+                    except (Cancelled, AICancelled):
+                        self.report('Cancelled before the score lines were captured. Retry to reuse the completed AI responses.')
+                        return
+                    with self.lock:
+                        self.adopt('ai', project)
+                        self.mode = 'ai'
+                        self.notation = 'chord' if project.notation == 'free' else project.notation
+                        self.title = project.title
+                        self.status = f'{len(project.lines)} captured lines ready to review. AI check findings are in Extraction notes.'
+                    return
+                partial = False
+                try:
+                    _, _, score = ai_extract(client, str(path), instrument, folder, bars_per_line=bars,
+                                            instructions=str(data.get('instructions', '')), full_frames=True,
+                                            selected_crop=selected_crop, title=title)
+                    check_cancel(self.cancel)
+                except (Cancelled, AICancelled):
+                    partial = True
+                    score = cancelled_draft(client, bars)
+                    if score is None:
+                        self.report('Cancelled before any complete score batches were saved. Retry extraction to reuse completed AI responses.')
+                        return
+                    write_json(folder/'cancelled-draft.aiscore.json', score)
+                self.report_ai('Preparing incomplete draft for review' if partial else 'Preparing AI score lines for review')
+                if partial:
+                    self.report('Cancelled. Preparing completed batches for review…')
+                try:
+                    project = create_project(score, self.output/('ai-score-'+uuid.uuid4().hex[:12]), source)
+                except Exception:
+                    if not partial:
+                        raise
+                    self.report(f'Cancelled. The incomplete draft could not be rendered; saved at {folder / "cancelled-draft.aiscore.json"}. Retry extraction to reuse completed responses.')
+                    return
+                with self.lock:
+                    self.projects['ai'] = project
+                    self.removed['ai'] = []
+                    self.mode = 'ai'
+                    self.notation = project.notation
+                    self.title = project.title
+                    self.status = (f'Cancelled. {len(project.lines)} incomplete draft lines available in Review & export. Retry with the same settings to reuse completed responses.'
+                                   if partial else f'{len(project.lines)} AI score lines ready to review.')
+            self.start(task, timed=True)
+        elif action in ('ai-layout', 'ai-preview'):
+            if not self.project or not self.project.ai_score:
+                raise ValueError('Extract or open an AI score first.')
+            import copy
+            project = copy.deepcopy(self.project)
+            mode = self.mode
+            def task():
+                update_layout(project, data.get('layout', {}))
+                images = []
+                if action == 'ai-preview':
+                    self.report('Rendering PDF preview')
+                    pdf = project.directory/'ai-preview.pdf'
+                    export_ai(project, pdf, paper=data.get('paper', 'A4'),
+                              left_margin_mm=float(data.get('left', 3)), right_margin_mm=float(data.get('right', 3)))
+                    for image in pdf_images(pdf, 1.2):
+                        with image:
+                            buffer = io.BytesIO(); image.save(buffer, format='PNG')
+                            images.append((buffer.getvalue(), image.size))
+                with self.lock:
+                    self.projects[mode] = project
+                    self.title = project.title
+                    if action == 'ai-preview':
+                        self.print_images = [content for content, size in images]
+                        self.print_preview = {'id': uuid.uuid4().hex, 'pages': True, 'widths': [1]*len(images),
+                            'bars': [0]*len(images), 'notes': project.warnings, 'sizes': [size for content, size in images],
+                            'anchors': [None]*len(images), 'overrides': [0]*len(images)}
+                    self.status = 'AI PDF preview ready.' if images else 'Page settings saved. No AI request was needed.'
+            self.start(task)
+        elif action == 'ai-edit':
+            if not self.project or not (self.project.ai_score or self.project.ai_check):
+                raise ValueError('Extract or open an AI score first.')
+            text = str(data.get('text', '')).strip()[:2000]
+            if not text:
+                raise ValueError('Describe the change you want.')
+            import copy
+            project = copy.deepcopy(self.project)
+            mode = self.mode
+            # Reuse the job's response cache when it is still on this machine.
+            origin = project.ai_score or project.ai_check
+            folder = Path(origin.get('job_folder') or self.output/'ai-jobs'/('edit-'+project.directory.name))
+            client = self.ai_client(provider, data, folder/'responses')
+            def task():
+                self.report('Applying AI edit')
+                if project.ai_score:
+                    notes = apply_ai_edit(client, project, text)
+                else:
+                    from ai_score.hybrid import edit_lines
+                    notes = edit_lines(client, project, text)
+                with self.lock:
+                    if project.ai_score:
+                        self.projects[mode] = project
+                    else:
+                        self.adopt(mode, project)
+                    self.title = project.title
+                    self.ai_edit = notes
+                    self.status = (f"AI edit applied: {len(notes['marks'])} bar(s) updated, {len(notes['reread'])} re-read, "
+                                   f"{len(notes['unsupported'])} request(s) not applied.")
+            self.start(task, timed=True)
+        elif action == 'ai-line-transcribe':
+            project = self.project
+            if not project or not project.ai_check:
+                raise ValueError('Extract with AI (keep video images) first.')
+            index = int(data.get('index', -1))
+            if not 0 <= index < len(project.lines):
+                raise ValueError('Select a score line first.')
+            folder = Path(project.ai_check.get('job_folder') or project.directory)
+            client = self.ai_client(provider, data, folder/'responses')
+            def task():
+                from ai_score.hybrid import transcribe_line
+                transcribe_line(client, project, index)
+                with self.lock:
+                    self.status = f'Line {index+1} engraved with AI. Use Edit crop → Restore original to go back to the capture.'
+            self.start(task, timed=True)
+        else:
+            raise ValueError('Unknown AI action.')
+
     def require_video(self):
         if self.video is None:
             raise ValueError('Load a video first.')
+
+    def adopt(self, mode, project):
+        """Install a project in a mode slot. Excluded lines (older projects, AI checks)
+        are presented as removed so Undo can bring them back under the current interaction."""
+        self.projects[mode] = project
+        visible, removed = [], []
+        for line in project.lines:
+            if line.included:
+                visible.append(line)
+            else:
+                line.included = True
+                removed.append((len(visible), line))
+        project.lines = visible
+        self.removed[mode] = removed
 
     def release_artifact(self, key):
         """Remove only this session's staged download, never the user's saved copy."""
@@ -580,12 +879,10 @@ class Handler(BaseHTTPRequestHandler):
                         if not 0 <= index < len(project.lines):
                             raise ValueError('Invalid score line.')
                         line = project.lines[index]
-                        name = (line.source_path or line.original_path or line.path) if query.get('kind', [''])[0] == 'source' else line.path
+                        name = ((line.raw_source_path if project.background == 'original' else None) or line.source_path or line.original_path or line.path) if query.get('kind', [''])[0] == 'source' else line.path
                         path = project_file(project, name)
-                        if query.get('kind', [''])[0] != 'source' and project.background != 'original':
-                            from PIL import Image
-                            with Image.open(path) as original:
-                                rendered = render_background(original, project.notation, project.background)
+                        if query.get('kind', [''])[0] != 'source':
+                            rendered = line_image(project,line)
                             buffer = io.BytesIO()
                             rendered.save(buffer, format='PNG')
                             return self.image_bytes(buffer.getvalue())
@@ -616,8 +913,9 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError('Choose a file smaller than 4 GB.')
                 original_name = Path(unquote(self.headers.get('X-Filename', 'video.mp4')))
                 suffix = original_name.suffix.lower()
-                if suffix not in ('.mp4', '.mkv', '.webm', '.mov', '.avi', '.drumscore'):
-                    raise ValueError('Choose a video or .drumscore project file.')
+                ai_project = original_name.name.lower().endswith('.aiscore.json')
+                if suffix not in ('.mp4', '.mkv', '.webm', '.mov', '.avi', '.drumscore') and not ai_project:
+                    raise ValueError('Choose a video, .drumscore, or .aiscore.json project file.')
                 path = self.server.workspace.output/'uploads'/uuid.uuid4().hex/(safe_name(original_name.stem)+suffix)
                 path.parent.mkdir(parents=True, exist_ok=True)
                 try:

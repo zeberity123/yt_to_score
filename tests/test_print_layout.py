@@ -84,6 +84,32 @@ def test_gray_playback_border_is_not_an_extra_barline():
     assert result is not None and len(result[0])==3
 
 
+def test_verified_bar_boundaries_survive_broken_lines_and_original_background(tmp_path):
+    from drumscore.editing import duplicate_line
+    project=project_at(tmp_path,count=2,notation='bass')
+    for i,line in enumerate(project.lines):
+        image=np.array(tab(bars=4,rules=4))
+        image[55:105,158:163]=255  # Most of a genuine internal barline disappears.
+        Image.fromarray(image).save(tmp_path/line.path)
+        assert len(tab_measures(Image.fromarray(image),4)[0])==3
+        raw=f'raw_{i}.png'
+        Image.new('RGB',(641,220),(30,70,90)).save(tmp_path/raw)
+        line.raw_source_path=raw
+        line.bar_bounds=[0,160,320,480,641]
+        line.bar_numbers=list(range(1+i*4,5+i*4))
+        line.bar_staff=[55,20]
+    rows,notes=print_rows(project,4)
+    assert not notes and [row.bars for row in rows]==[4,4]
+    for background in ('original','black'):
+        project.background=background
+        rendered,_=print_rows(project,4)
+        assert [r.image.size for r in rendered]==[r.image.size for r in rows]
+    restored=open_project(archive_project(project,tmp_path/'verified.drumscore'),tmp_path/'opened')
+    duplicate_line(restored,0)
+    assert [r.bars for r in print_rows(restored,4)[0]]==[4,4,4]
+    assert restored.lines[0].bar_numbers==[1,2,3,4]
+
+
 def test_reflow_uses_included_lines_in_current_order(tmp_path):
     project=project_at(tmp_path,count=3)
     project.lines.reverse()

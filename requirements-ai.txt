@@ -1,0 +1,4 @@
+-r requirements.txt
+verovio==6.3.0
+svglib==2.2.0
+pypdfium2==5.13.0
