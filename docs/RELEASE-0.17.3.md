@@ -48,3 +48,7 @@ copy mid-slide with its stems cut off; it is now captured once, whole.
   videos), `scripts/test-flexible.cjs`, `scripts/test-guitar-desktop.cjs` and
   `scripts/test-desktop.cjs`. The first two were updated for the current interface
   (Chords & lyrics as an instrument, "Bass TAB" label), which they predated.
+- The portable EXE passed startup, bundled media conversion, capture, duplication,
+  print defaults and shutdown cleanup (`scripts/test-portable.cjs`).
+- Artifact: `dist/Video-Sheet-to-PDF-AI-0.17.3-win-x64.exe` (221,218,628 bytes). SHA-256:
+  `c6fbf61d16271fe55c0bc3e9b386269d5e6288ac2d25abbeff1fa152cb63dbb9`.
