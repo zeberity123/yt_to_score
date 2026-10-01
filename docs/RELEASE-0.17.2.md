@@ -16,3 +16,7 @@ keep the Preview PDF button in their own page settings.
   (`test_preview_pdf_renders_the_pages_for_the_current_settings`).
 - Source Electron checks passed: `scripts/test-print-layout.cjs` (now opens Preview PDF
   and checks the page grid) and `scripts/test-desktop.cjs`.
+- The portable EXE passed startup, bundled media conversion, capture, duplication,
+  print defaults and shutdown cleanup (`scripts/test-portable.cjs`).
+- Artifact: `dist/Video-Sheet-to-PDF-AI-0.17.2-win-x64.exe` (221,219,208 bytes). SHA-256:
+  `978b0751b54b0c865efd894ee5461b07a3d67682b81a703da34ed24278b181fd`.
