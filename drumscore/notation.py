@@ -158,6 +158,14 @@ def follow_region(frame, region, notation):
             edge -= 1
         top = edge if edge > limit else max(top, edge)
         panel_top = edge if edge > limit else None
+        # The same below: a panel that ends just under the system must not let the moving
+        # footage beneath it into the crop.
+        limit = min(len(gray), int(last+spacing*14))
+        edge = last
+        while edge < limit-1 and smooth[edge+1] > .70:
+            edge += 1
+        if edge < limit-1 or limit == len(gray):
+            bottom = edge+1
     # A neighboring staff can be incomplete as a system (e.g. the next TAB is
     # offscreen), but still tells us where this system's annotations must stop.
     neighbors = staffs(gray,5) + staffs(gray,4 if notation == 'bass' else 6)
@@ -195,7 +203,8 @@ def panel_moves(frames, region, notation):
     tops = []
     for frame in frames:
         followed = follow_region(frame, region, notation)
-        if followed != region:
+        # Only a white panel has an edge to follow; notation drawn over footage keeps its fixed area.
+        if followed != region and np.mean(followed.crop(frame) > 200) > .55:
             tops.append(followed.top*frame.shape[0])
     return len(tops) >= 3 and max(tops)-min(tops) > max(8, frames[0].shape[0]*.015)
 

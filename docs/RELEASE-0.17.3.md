@@ -10,13 +10,15 @@ line, such as `https://youtu.be/Wu-cyW2YopY`.
   Five of six strings are no longer mistaken for a staff, and a staff with a row of ledger
   notes is no longer mistaken for a TAB.
 - **Follow changing score position follows the panel.** On a white panel the crop now
-  ends at the panel's edge instead of a fixed margin above the TAB, which used to cut off
-  the staff. Guitar strings, frets or shelves in the footage are not treated as a
-  neighbouring staff, and the crop is never narrower than the selected area, so a short
-  final system prints at the same scale as the full-width ones.
-- **A resizing panel is detected automatically.** For Guitar TAB, Bass TAB and Piano the
-  extractor samples the video first; when the system's top edge moves it follows the panel
-  without the checkbox and says so in the extraction notes.
+  ends at the panel's top and bottom edges instead of a fixed margin around the TAB, which
+  used to cut off the staff above and could let moving footage in below. Guitar strings,
+  frets or shelves in the footage are not treated as a neighbouring staff, and the crop is
+  never narrower than the selected area, so a short final system prints at the same scale
+  as the full-width ones.
+- **A resizing or sliding white panel is detected automatically.** For Guitar TAB, Bass TAB
+  and Piano the extractor samples the video first; when a white panel's top edge moves it
+  follows the panel without the checkbox and says so in the extraction notes. Notation
+  drawn directly over footage keeps its fixed area.
 - **A wide playback cursor no longer splits a line.** Some arrangements print repeated
   strums in grey and turn them solid while a translucent cursor band is over them. The
   cursor band is now left out of the "has the view changed" comparison, so lines full of
@@ -32,8 +34,17 @@ lines and the two-bar line at 117), all 1920 px wide, 5 transition samples disca
 no duplicates. Tempo and "Solo" marks that the video itself clips at the panel edge
 stay clipped. Capture took about 3 minutes for the 3-minute video.
 
+Eight bass and piano sample videos give the same line counts as before with and without
+the follow option, with one intended difference: a bass video whose panel slides into
+place during the intro (`21XgHm-Oyhc`) used to capture its first line twice, the first
+copy mid-slide with its stems cut off; it is now captured once, whole.
+
 ## Validation
 
 - Full Python suite: 265 passed, including four new tests with a synthetic staff + TAB
   panel (`tests/test_guitar_pair.py`): pairing and ledger rows, panel-edge following and
   width, cursor masking, and end-to-end extraction of a resizing panel.
+- Source Electron checks passed: `scripts/test-instruments-desktop.cjs` (eight bass/piano
+  videos), `scripts/test-flexible.cjs`, `scripts/test-guitar-desktop.cjs` and
+  `scripts/test-desktop.cjs`. The first two were updated for the current interface
+  (Chords & lyrics as an instrument, "Bass TAB" label), which they predated.

@@ -114,6 +114,8 @@
   "Notation": ["악보 종류", "楽譜の種類"],
   "Drums": ["드럼", "ドラム"],
   "Bass": ["베이스", "ベース"],
+  "Bass TAB": ["베이스 TAB", "ベースTAB"],
+  "Guitar TAB": ["기타 TAB", "ギターTAB"],
   "Piano": ["피아노", "ピアノ"],
   "Unknown notation type.": ["지원하지 않는 악보 종류입니다.", "対応していない楽譜の種類です。"],
   "Guitar TAB (6 strings)": ["기타 TAB (6현)", "ギターTAB（6弦）"],

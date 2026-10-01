@@ -21,13 +21,13 @@ const root = path.resolve(__dirname,'..');
       assert.ok(await page.locator('#bpm').isVisible());
       assert.ok(await page.locator('#flexible-area').isVisible());
     }
-    await page.locator('#free').click();
+    // Chords & lyrics is an instrument now; timing and follow controls do not apply to it.
+    await page.locator('#notation').selectOption('chord');
     await page.waitForFunction(()=>document.querySelector('#timing-controls').hidden);
     assert.ok(await page.locator('#bpm').isHidden());
     assert.ok(await page.locator('#flexible-area').isHidden());
-    await page.locator('#automatic').click();
-    await page.waitForFunction(()=>!document.querySelector('#timing-controls').hidden);
     await page.locator('#notation').selectOption('bass');
+    await page.waitForFunction(()=>!document.querySelector('#timing-controls').hidden);
     await page.locator('#source').fill(path.join(process.env.APPDATA,'Video Sheet to PDF/output/cache/f5VnaleBDJM-av.mp4'));
     await page.locator('#load-video').click();
     await page.waitForFunction(()=>!document.querySelector('#extract').disabled,null,{timeout:120000});

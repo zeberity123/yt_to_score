@@ -4,7 +4,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const root=path.resolve(__dirname,'..');
 const examples={bass:['zuk6TVvOYMU','21XgHm-Oyhc','Qo01L0TLih4','QsCv8s5nTmo','i98e58e5AGY'],piano:['uAQLt5lyyIM','J73Fhk5cTX0','ucx1BYaEGXE']};
-const expectedCounts={zuk6TVvOYMU:2,'21XgHm-Oyhc':3,Qo01L0TLih4:3,QsCv8s5nTmo:4,i98e58e5AGY:4,uAQLt5lyyIM:3,J73Fhk5cTX0:3,ucx1BYaEGXE:6};
+// 21XgHm-Oyhc slides its panel into place during the intro; following it captures the first
+// line once (it used to be captured a second time mid-slide, with its stems cut off).
+const expectedCounts={zuk6TVvOYMU:2,'21XgHm-Oyhc':2,Qo01L0TLih4:3,QsCv8s5nTmo:4,i98e58e5AGY:4,uAQLt5lyyIM:3,J73Fhk5cTX0:3,ucx1BYaEGXE:6};
 (async()=>{
   const executablePath=process.env.SCORE_TEST_EXECUTABLE;
   const profile=path.join(root,'diagnostics','instruments-ui-profile');
@@ -13,7 +15,7 @@ const expectedCounts={zuk6TVvOYMU:2,'21XgHm-Oyhc':3,Qo01L0TLih4:3,QsCv8s5nTmo:4,
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   try {
     await page.waitForFunction(()=>!document.querySelector('#open-project').disabled);
-    for(const [language,labels] of [['en',['Drums','Bass','Piano']],['ko',['드럼','베이스','피아노']],['ja',['ドラム','ベース','ピアノ']]]) {
+    for(const [language,labels] of [['en',['Drums','Bass TAB','Piano']],['ko',['드럼','베이스 TAB','피아노']],['ja',['ドラム','ベースTAB','ピアノ']]]) {
       await page.locator('#language').selectOption(language);
       for(const [index,kind] of ['staff','bass','piano'].entries())
         await page.waitForFunction(({kind,label})=>document.querySelector(`#notation option[value="${kind}"]`).textContent===label,{kind,label:labels[index]});
