@@ -88,6 +88,10 @@ class Workspace:
         self.extraction_started = None
         self.extraction_elapsed = None
         self.extraction_running = False
+        # Time taken shown in the status bar, per capture mode: an extraction job for
+        # Automatic and AI, first-to-latest capture for Manual.
+        self.elapsed = dict.fromkeys(MODES)
+        self.manual_started = None
         self.ai_progress = None
         self.ai_gate = None
 
@@ -130,7 +134,7 @@ class Workspace:
                     'aiPause': pause if self.extraction_running and not self.cancel.is_set() else None,
                     'aiProgress': {k: v for k, v in self.ai_progress.items() if k != 'updated'} if self.ai_progress else None,
                     'elapsedSeconds': (time.monotonic()-self.extraction_started-(pause['seconds'] if pause else 0) if self.extraction_running
-                                       else self.extraction_elapsed),
+                                       else self.elapsed[self.mode]),
                     'canUndo': bool(self.removed[self.mode]),
                     'barsPerLine': project.bars_per_line if project else 0,
                     'background': project.background if project else 'white',
@@ -182,6 +186,7 @@ class Workspace:
                     if timed:
                         paused = self.ai_gate.state()['seconds'] if self.ai_gate else 0
                         self.extraction_elapsed = time.monotonic()-self.extraction_started-paused
+                        self.elapsed[self.mode] = self.extraction_elapsed
                         self.extraction_running = False
                         if self.ai_gate:
                             self.ai_gate.resume()
@@ -283,6 +288,7 @@ class Workspace:
                         self.projects = empty_projects()
                         self.removed = empty_removed()
                         self.ai_edit = None
+                        self.elapsed, self.manual_started = dict.fromkeys(MODES), None
                         self.status = ('Video ready. Choose Extract with AI, or enable Select score area to drag a crop.'
                                        if mode == 'ai' else 'Video ready. Drag on the video to select your score.')
                 self.start(task)
@@ -339,7 +345,8 @@ class Workspace:
                         self.mode = 'automatic'
                         self.notation = notation
                         self.status = f'{len(project.lines)} score lines ready to review.'
-                self.start(task)
+                self.ai_gate = None  # a pause gate from an earlier AI job does not apply here
+                self.start(task, timed=True)
             elif action in ('capture', 'add-view'):
                 self.require_video()
                 seconds = float(data['time'])
@@ -350,7 +357,10 @@ class Workspace:
                     if not self.project:
                         self.projects[self.mode] = new_manual_project(self.output, self.title, self.source, self.region)
                         self.project.notation = self.notation
+                    if self.manual_started is None or not self.project.lines:
+                        self.manual_started = time.monotonic()  # the capture session starts with its first line
                     append_line(self.project, frame, self.region, seconds)
+                    self.elapsed['manual'] = time.monotonic()-self.manual_started
                 else:
                     if not self.project:
                         raise ValueError('Extract a score first, then add missing views.')
@@ -403,6 +413,7 @@ class Workspace:
                 self.projects = empty_projects()
                 self.removed = empty_removed()
                 self.ai_edit = None
+                self.elapsed, self.manual_started = dict.fromkeys(MODES), None
                 self.adopt(mode, project)
                 self.mode, self.title = mode, project.title
                 self.region = project.region

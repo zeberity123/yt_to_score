@@ -10,10 +10,11 @@ and print output. Capture, review, crop editing, and phone layouts share the sam
 Version 0.17 offers **Automatic**, **AI** and **Manual** capture; see the release
 notes for [0.17.0](docs/RELEASE-0.17.0.md), [0.17.1](docs/RELEASE-0.17.1.md)
 (page-fit PDF options, larger crop editor), [0.17.2](docs/RELEASE-0.17.2.md)
-(Preview PDF for captured images) and [0.17.3](docs/RELEASE-0.17.3.md) (guitar staff + TAB
-capture on resizing score panels). The portable build is
-`Video-Sheet-to-PDF-AI-0.17.3-win-x64.exe` on the
-[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.17.3). See the
+(Preview PDF for captured images), [0.17.3](docs/RELEASE-0.17.3.md) (guitar staff + TAB
+capture on resizing score panels) and [0.17.4](docs/RELEASE-0.17.4.md) (time taken in
+every mode). The portable build is
+`Video-Sheet-to-PDF-AI-0.17.4-win-x64.exe` on the
+[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.17.4). See the
 [integrated AI guide](docs/AI-INTEGRATED.md) for subscription/API connections, the
 AI method choice (keep video images with an AI check, or re-engrave), instrument
 selection, source row breaks, additional instructions, the AI edit box, and editable

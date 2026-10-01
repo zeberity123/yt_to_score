@@ -108,6 +108,37 @@ def test_preview_pdf_renders_the_pages_for_the_current_settings(server):
     assert tight['id'] != loose['id'] and len(workspace.print_images) == 2
 
 
+def test_time_taken_is_reported_per_mode_for_automatic_and_manual(server, tmp_path):
+    import time
+    from unittest.mock import patch
+    workspace = server.workspace
+    workspace.video = tmp_path/'video.mp4'
+    workspace.video.write_bytes(b'fixture')
+    assert workspace.state()['elapsedSeconds'] is None
+    def fake(path, output, title, source, region, **options):
+        time.sleep(.06)
+        return new_manual_project(output, title, source, region)
+    with patch('drumscore.server.extract', fake):
+        workspace.command('extract', {'notation': 'bass'})
+        assert workspace.state()['elapsedSeconds'] is not None  # running timer while extracting
+        settle(workspace)
+    automatic = workspace.state()['elapsedSeconds']
+    assert automatic >= .06 and workspace.state()['aiPause'] is None
+    assert workspace.state()['elapsedSeconds'] == automatic  # stays after completion
+    workspace.command('mode', {'mode': 'manual'})
+    assert workspace.state()['elapsedSeconds'] is None
+    with patch('drumscore.server.preview', lambda path, seconds: np.full((80, 160, 3), 255, np.uint8)):
+        workspace.command('capture', {'time': 0})
+        assert 0 <= workspace.state()['elapsedSeconds'] < .05  # the session starts with the first line
+        time.sleep(.06)
+        workspace.command('capture', {'time': 1})
+    assert workspace.state()['elapsedSeconds'] >= .06
+    workspace.command('mode', {'mode': 'automatic'})
+    assert workspace.state()['elapsedSeconds'] == automatic
+    workspace.command('mode', {'mode': 'ai'})
+    assert workspace.state()['elapsedSeconds'] is None
+
+
 def test_extract_action_maps_chord_to_text_capture(server, tmp_path):
     from unittest.mock import patch
     workspace = server.workspace

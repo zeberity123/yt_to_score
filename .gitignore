@@ -16,3 +16,6 @@ build/
 dist/
 .builder-cache/
 *.spec
+
+# Local transcription work; never publish.
+independent_score/kotab_sefure/

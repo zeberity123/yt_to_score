@@ -60,7 +60,8 @@ dialog{border:1px solid #dae1d0;border-radius:18px;background:var(--paper);color
 .print-layout-controls .check-row,.print-layout-controls .field-label{margin:0}
 .print-layout-controls .field-label{display:flex;gap:10px;align-items:center}
 .print-layout-controls input[type=number]{width:72px}
-.print-layout-controls>.button-row{margin-left:auto}
+.print-layout-controls>.button-row{margin-left:auto;flex:1 1 340px}
+.print-layout-controls>.button-row>button{white-space:nowrap;min-width:max-content}
 /* PDF page previews sit two-up so page breaks and gaps are visible at a glance. */
 #print-preview-rows.page-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;background:#cfd5cc}
 #print-preview-rows.page-grid>div{background:white;padding:6px;box-shadow:0 1px 5px #0002}
