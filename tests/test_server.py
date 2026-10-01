@@ -88,6 +88,26 @@ def test_export_passes_page_fit_settings_to_the_image_exporter(server):
                           title_size=18., show_title=False, page_numbers=False)]
 
 
+def test_preview_pdf_renders_the_pages_for_the_current_settings(server):
+    workspace = server.workspace
+    project = new_manual_project(workspace.output, 'Preview', '', Region())
+    for time in range(10):
+        append_line(project, np.full((210, 800, 3), 255, np.uint8), Region(), time)
+    workspace.projects['manual'] = project
+    workspace.mode = 'manual'
+    workspace.command('preview-pdf', {'title': 'Typed but not saved', 'gap': '0', 'top': '12', 'bottom': '12'})
+    settle(workspace)
+    loose = workspace.state()['printPreview']
+    assert loose['pages'] and len(loose['widths']) == len(workspace.print_images) == 3
+    assert workspace.print_images[0].startswith(b'\x89PNG')
+    assert project.title == 'Preview' and not list(project.directory.glob('preview-*.pdf'))
+    assert not workspace.artifacts  # a preview never creates a download
+    workspace.command('preview-pdf', {'top': '0', 'bottom': '0', 'showTitle': False, 'pageNumbers': False})
+    settle(workspace)
+    tight = workspace.state()['printPreview']
+    assert tight['id'] != loose['id'] and len(workspace.print_images) == 2
+
+
 def test_extract_action_maps_chord_to_text_capture(server, tmp_path):
     from unittest.mock import patch
     workspace = server.workspace

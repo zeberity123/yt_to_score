@@ -43,6 +43,15 @@ def empty_removed():
     return {mode: [] for mode in MODES}
 
 
+def pdf_settings(data):
+    """Page settings shared by PDF export and the PDF preview of image projects."""
+    return dict(paper=data.get('paper', 'A4'), gap_mm=float(data.get('gap', 0)),
+                left_margin_mm=float(data.get('left', 3)), right_margin_mm=float(data.get('right', 3)),
+                top_margin_mm=float(data.get('top', 12)), bottom_margin_mm=float(data.get('bottom', 12)),
+                title_size=float(data.get('titleSize', 12)),
+                show_title=bool(data.get('showTitle', True)), page_numbers=bool(data.get('pageNumbers', True)))
+
+
 class Workspace:
     def __init__(self, output=None):
         self.output = Path(output or os.environ.get('DRUMSCORE_OUTPUT') or ROOT / 'output')
@@ -473,6 +482,39 @@ class Workspace:
                                               'overrides':[project.bar_overrides.get(row.anchor,0) for row in rows]}
                         self.status=f'{len(rows)} print lines ready.'
                 self.start(task)
+            elif action == 'preview-pdf':
+                if not self.project:
+                    raise ValueError('Capture lines or open a project first.')
+                project = self.project
+                if project.ai_score:
+                    raise ValueError('Use Preview PDF in the AI page settings for this score.')
+                settings = pdf_settings(data)
+                title = str(data.get('title', self.title))[:500]
+                def task():
+                    # The exact pages Export PDF would write, without saving the title or creating a download.
+                    from .ai_workspace import pdf_images
+                    self.report('Rendering PDF preview')
+                    pdf = project.directory/('preview-'+uuid.uuid4().hex[:8]+'.pdf')
+                    images = []
+                    try:
+                        export_pdf(project, pdf, title=title, **settings)
+                        for image in pdf_images(pdf, 1.4):
+                            check_cancel(self.cancel)
+                            with image:
+                                buffer = io.BytesIO(); image.save(buffer, format='PNG')
+                                images.append((buffer.getvalue(), image.size))
+                    finally:
+                        try:
+                            pdf.unlink(missing_ok=True)
+                        except OSError:
+                            pass
+                    with self.lock:
+                        self.print_images = [content for content, size in images]
+                        self.print_preview = {'id': uuid.uuid4().hex, 'pages': True, 'widths': [1]*len(images),
+                            'bars': [0]*len(images), 'notes': [], 'sizes': [size for content, size in images],
+                            'anchors': [None]*len(images), 'overrides': [0]*len(images)}
+                        self.status = f'PDF preview ready: {len(images)} page(s).'
+                self.start(task)
             elif action in ('remove', 'duplicate', 'undo', 'include', 'move', 'edit', 'save', 'export'):
                 if not self.project:
                     raise ValueError('Capture lines or open a project first.')
@@ -537,16 +579,13 @@ class Workspace:
                                 archive_project(project, destination)
                             else:
                                 project.save()
-                                page = dict(paper=data.get('paper', 'A4'), gap_mm=float(data.get('gap', 0)),
-                                            left_margin_mm=float(data.get('left', 3)), right_margin_mm=float(data.get('right', 3)))
+                                settings = pdf_settings(data)
                                 if project.ai_score:
                                     from .ai_workspace import export_ai
-                                    export_ai(project, destination, **page)
+                                    export_ai(project, destination, **{key: settings[key] for key in
+                                                                       ('paper', 'gap_mm', 'left_margin_mm', 'right_margin_mm')})
                                 else:
-                                    export_pdf(project, destination, **page,
-                                               top_margin_mm=float(data.get('top', 12)), bottom_margin_mm=float(data.get('bottom', 12)),
-                                               title_size=float(data.get('titleSize', 12)),
-                                               show_title=bool(data.get('showTitle', True)), page_numbers=bool(data.get('pageNumbers', True)))
+                                    export_pdf(project, destination, **settings)
                         except Exception:
                             destination.unlink(missing_ok=True)
                             if destination.parent.is_dir() and not any(destination.parent.iterdir()):

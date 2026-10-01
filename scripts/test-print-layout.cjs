@@ -58,6 +58,17 @@ const root=path.resolve(__dirname,'..');
     assert.equal(await page.locator('#print-preview').evaluate(dialog=>dialog.open),true);
     await page.mouse.click(2,2);
     await page.waitForFunction(()=>!document.querySelector('#print-preview').open);
+    // Preview PDF shows real pages for the current gap/margins without exporting.
+    await page.locator('#gap').fill('4');
+    await page.locator('#preview-pdf').click();
+    await page.waitForFunction(()=>document.querySelector('#print-preview').open && document.querySelector('#print-preview-rows').classList.contains('page-grid'),null,{timeout:60000});
+    await page.waitForFunction(()=>document.querySelector('#print-preview-rows img')?.naturalWidth>0);
+    const pagePreview=(await state()).printPreview;
+    assert.ok(pagePreview.pages && pagePreview.widths.length>=1);
+    assert.equal(await page.locator('#print-preview-rows select').count(),0);
+    await page.screenshot({path:path.join(root,'diagnostics','pdf-page-preview.png')});
+    await page.locator('#close-print-preview').click();
+    await page.locator('#gap').fill('0');
     for(const [language,text] of [['ko','TAB 마디 재배치'],['ja','TABの小節を並べ直す'],['en','Arrange TAB bars']]){
       await page.locator('#language').selectOption(language);
       await page.waitForFunction(text=>document.querySelector('#reflow-label').textContent.includes(text),text);

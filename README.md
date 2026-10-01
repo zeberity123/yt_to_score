@@ -8,10 +8,11 @@ and print output. Capture, review, crop editing, and phone layouts share the sam
 ## Start
 
 Version 0.17 offers **Automatic**, **AI** and **Manual** capture; see the release
-notes for [0.17.0](docs/RELEASE-0.17.0.md) and [0.17.1](docs/RELEASE-0.17.1.md)
-(page-fit PDF options, larger crop editor). The portable build is
-`Video-Sheet-to-PDF-AI-0.17.1-win-x64.exe` on the
-[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.17.1). See the
+notes for [0.17.0](docs/RELEASE-0.17.0.md), [0.17.1](docs/RELEASE-0.17.1.md)
+(page-fit PDF options, larger crop editor) and [0.17.2](docs/RELEASE-0.17.2.md)
+(Preview PDF for captured images). The portable build is
+`Video-Sheet-to-PDF-AI-0.17.2-win-x64.exe` on the
+[GitHub release](https://github.com/zeberity123/yt_to_score/releases/tag/v0.17.2). See the
 [integrated AI guide](docs/AI-INTEGRATED.md) for subscription/API connections, the
 AI method choice (keep video images with an AI check, or re-engrave), instrument
 selection, source row breaks, additional instructions, the AI edit box, and editable

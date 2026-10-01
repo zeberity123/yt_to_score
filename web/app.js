@@ -317,7 +317,7 @@ function updateControls() {
     'undo-line':!!state?.canUndo,
     'move-down':!!line && selected<state.lines.length-1,
     'save-project':!!state?.lines.length, 'export-pdf':!!state?.lines.some(l => l.included),
-    'preview-print':!!state?.lines.some(l=>l.included), 'reflow-bars':!!state?.lines.length && ['guitar','bass'].includes(state.notation),
+    'preview-print':!!state?.lines.some(l=>l.included), 'preview-pdf':!!state?.lines.some(l=>l.included) && !state.ai, 'reflow-bars':!!state?.lines.length && ['guitar','bass'].includes(state.notation),
     'bars-per-line':!!state?.barsPerLine,
     'for-print':true, notation:true, 'top-margin':true, 'bottom-margin':true, 'title-size':true, 'print-title':true, 'page-numbers':true,
     background:!!state?.lines.length,
@@ -539,6 +539,7 @@ listen('preview-print','click',()=>{video.pause();job='print-preview';return com
   $('print-preview-title').textContent=preview.pages ? 'Preview PDF' : 'Print lines';
   $('print-preview-summary').textContent=`${preview.widths.length} ${preview.pages ? 'PDF pages' : 'print lines'}`;
   $('print-preview-notes').replaceChildren(...preview.notes.map(note=>{const p=document.createElement('p');p.textContent=note;return p;}));
+  $('print-preview-rows').classList.toggle('page-grid', !!preview.pages && !state.ai);
   $('print-preview-rows').replaceChildren(...preview.widths.map((width,index)=>{
     const row=document.createElement('div'), label=document.createElement('span'), img=document.createElement('img');
     label.textContent=`${preview.pages ? 'Page' : 'Line'} ${String(index+1).padStart(2,'0')}`;
@@ -572,14 +573,24 @@ listen('preview-print','click',()=>{video.pause();job='print-preview';return com
       previewFocus=null;
     }
 }
-listen('export-pdf','click', () => {
-  for (const id of ['top-margin','bottom-margin','title-size']) if (!state.ai && !$(id).reportValidity()) return;
-  video.pause(); job = 'export';
-  return command('export', {title:$('pdf-title').value, paper:$('paper').value,
+function pdfSettings() {
+  return {title:$('pdf-title').value, paper:$('paper').value,
     gap:$('gap').value, left:$('left-margin').value, right:$('right-margin').value,
     top:$('top-margin').value, bottom:$('bottom-margin').value, titleSize:$('title-size').value,
-    showTitle:$('print-title').checked, pageNumbers:$('page-numbers').checked,
-    aiLayout:state.ai ? aiPageSettings() : null});
+    showTitle:$('print-title').checked, pageNumbers:$('page-numbers').checked};
+}
+function pdfSettingsValid() {
+  return state.ai || ['gap','left-margin','right-margin','top-margin','bottom-margin','title-size'].every(id => $(id).reportValidity());
+}
+listen('export-pdf','click', () => {
+  if (!pdfSettingsValid()) return;
+  video.pause(); job = 'export';
+  return command('export', {...pdfSettings(), aiLayout:state.ai ? aiPageSettings() : null});
+});
+listen('preview-pdf','click', () => {
+  if (!pdfSettingsValid()) return;
+  video.pause(); job = 'print-preview';
+  return command('preview-pdf', pdfSettings());
 });
 listen('edit-line','click', () => {
   editorIndex = selected;
