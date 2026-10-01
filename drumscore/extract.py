@@ -8,7 +8,8 @@ import numpy as np
 from PIL import Image
 
 from .video import check_cancel, frames, metadata, preview
-from .vision import Region, auto_region, clean_score, clean_tab, difference, signature, tab_signature, split_systems, staffs, system_signature
+from .vision import (Region, auto_region, clean_score, clean_tab, cursor_columns, difference, signature,
+                     tab_signature, split_systems, staffs, system_signature, without_cursor)
 from .notation import NOTATIONS, clean_notation, system_groups, split_notation, system_fingerprint, notation_signature
 from .matching import aligned_difference, measure_anchors
 
@@ -153,7 +154,8 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
             rejected += 1
             current = None
             return
-        segments = split_notation(image,notation,with_bounds=True) if paired else split_systems(image, with_bounds=True, rules=rules)
+        # Guitar TAB may carry a staff above it; its chords and section marks belong to that pair.
+        segments = split_notation(image,notation,with_bounds=True) if paired or notation == 'guitar' else split_systems(image, with_bounds=True, rules=rules)
         strips = [strip for strip, bounds in segments]
         if strips:
             view_number += 1
@@ -222,6 +224,18 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
                                               raw_source_path=raw_name))
         current = None
 
+    auto_follow = False
+    if not flexible_area and mode != 'page' and notation in ('guitar', 'bass', 'piano'):
+        from .notation import panel_moves
+        auto_follow = flexible_area = panel_moves(
+            [preview(path, start+(end-start)*fraction) for fraction in (.08, .22, .36, .5, .64, .78, .92)], region, notation)
+
+    def near(a, b, frame):
+        """Two followed crops within a few pixels of each other are the same crop."""
+        h, w = frame.shape[:2]
+        return (abs(a.left-b.left)*w <= 3 and abs(a.right-b.right)*w <= 3 and
+                abs(a.top-b.top)*h <= 3 and abs(a.bottom-b.bottom)*h <= 3)
+
     iterator = frames(path, interval, start, end, cancel)
     try:
         for t, frame in iterator:
@@ -230,9 +244,16 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
             if flexible_area and mode != 'page':
                 from .notation import follow_region
                 active_region = follow_region(frame, region, notation)
-            gray = clean(active_region.crop(frame))
+                # Compression jitter must not turn one stable view into several one-sample views.
+                if current is not None and near(active_region, current['region'], frame):
+                    active_region = current['region']
+            crop_frame = active_region.crop(frame)
+            gray = clean(crop_frame)
             sig = notation_signature(gray,notation) if paired else tab_signature(gray) if notation == 'guitar' else signature(gray)
-            if current is not None and gray.shape == current['samples'][0].shape and difference(current["signature"], sig, fine=current['fine'], stable=current['stable']) <= threshold:
+            cursor = cursor_columns(crop_frame)
+            if current is not None and gray.shape == current['samples'][0].shape and difference(
+                    *without_cursor(current["signature"], sig, current['cursor'], cursor),
+                    fine=current['fine'], stable=current['stable']) <= threshold:
                 current["count"] += 1
                 current['until'] = min(end, t+interval)
                 # A small reservoir spreads the median across the entire stable view.
@@ -247,7 +268,7 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
                 if find_groups(gray):
                     tab_only = notation == 'guitar' or (notation == 'bass' and not staffs(gray))
                     current = {"signature": sig, "samples": [gray.copy()], "count": 1, "time": t, 'until': min(end,t+interval),
-                               "frame": frame.copy(), 'region': active_region,
+                               "frame": frame.copy(), 'region': active_region, 'cursor': cursor,
                                # Translucent white-on-video TAB needs the same
                                # speckle tolerance as moving drum-score panels.
                                "fine": tab_only and np.mean(active_region.crop(frame) > 200) > .55,
@@ -260,6 +281,8 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
         iterator.close()
     if not project.lines:
         raise ValueError("No stable score lines found. Adjust the crop, choose another preview time, or lower the sample interval.")
+    if auto_follow:
+        project.warnings.append('The score panel changes height during the video, so its position was followed automatically.')
     if rejected:
         project.warnings.append(f"Skipped {rejected} unstable sampled views (transitions or views shorter than two samples). Review for missing lines; use a smaller sample interval if needed.")
     if numbered_fallback:

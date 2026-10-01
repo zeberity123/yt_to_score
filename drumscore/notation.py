@@ -34,9 +34,59 @@ def clean_notation(frame, notation):
     return gray
 
 
+def _pair_tabs(tabs, ordinary):
+    """Join each TAB with the staff printed directly above it; a lone TAB stays as it is."""
+    result = []
+    used = set()
+    for tab in tabs:
+        above = [(i,g) for i,g in enumerate(ordinary) if i not in used and g[1] < tab[0]
+                 and tab[0]-g[1] < max(g[2],tab[2])*16]
+        if above:
+            i, staff = max(above,key=lambda item:item[1][0])
+            # Only attach the immediately preceding staff, never across another TAB.
+            if not any(staff[1] < other[0] < tab[0] for other in tabs):
+                used.add(i)
+                result.append((staff[0],tab[1],min(staff[2],tab[2])))
+                continue
+        result.append(tab)
+    return sorted(result)
+
+
+def _thin_rule(gray, y, spacing):
+    """How many columns of row y carry a thin rule. Noteheads, beams and digits are thicker."""
+    reach = max(2, int(min(4, spacing/2.5)))
+    ink = gray < 235
+    best = 0
+    # The six-rule fit can sit a few pixels off the printed string; look around it.
+    for row in range(int(y)-max(1, round(spacing*.2)), int(y)+max(1, round(spacing*.2))+1):
+        if 0 <= row < len(gray):
+            thin = ink[row] & ~ink[max(0, row-reach)] & ~ink[min(len(gray)-1, row+reach)]
+            best = max(best, int(thin.sum()))
+    return best
+
+
+def guitar_groups(gray):
+    """Six-string TAB systems, each joined with a five-line staff printed directly above it."""
+    tabs, ordinary = staffs(gray, 6), staffs(gray)
+    for tab in list(tabs):
+        for staff in list(ordinary):
+            # The same rules can read both ways: five of six strings look like a staff, and
+            # a staff with a row of ledger notes one space away looks like six strings.
+            if staff[0] < tab[0]-2 or staff[1] > tab[1]+2 or abs(staff[2]-tab[2]) > tab[2]*.2:
+                continue
+            extra = tab[1] if abs(staff[0]-tab[0]) <= abs(staff[1]-tab[1]) else tab[0]
+            typical = np.median([_thin_rule(gray, y, tab[2]) for y in np.linspace(staff[0], staff[1], 5).round()])
+            if _thin_rule(gray, extra, tab[2]) >= typical*.4:
+                ordinary.remove(staff)  # a real sixth string, even where digits interrupt it
+            else:
+                tabs.remove(tab)  # the sixth row is noteheads on ledger lines: this is the staff
+                break
+    return _pair_tabs(tabs, ordinary)
+
+
 def system_groups(gray, notation):
     if notation == 'guitar':
-        return staffs(gray,6)
+        return guitar_groups(gray)
     ordinary = staffs(gray)
     if notation == 'bass':
         # A faint fifth rule may disappear at the darker detection threshold.
@@ -44,20 +94,7 @@ def system_groups(gray, notation):
         tabs = [tab for tab in staffs(gray, 4) if not any(
             tab[0] >= staff[0]-2 and tab[1] <= staff[1]+2
             for staff in ordinary)]
-        result = []
-        used = set()
-        for tab in tabs:
-            above = [(i,g) for i,g in enumerate(ordinary) if i not in used and g[1] < tab[0]
-                     and tab[0]-g[1] < max(g[2],tab[2])*16]
-            if above:
-                i, staff = max(above,key=lambda item:item[1][0])
-                # Only attach the immediately preceding staff, never across another TAB.
-                if not any(staff[1] < other[0] < tab[0] for other in tabs):
-                    used.add(i)
-                    result.append((staff[0],tab[1],min(staff[2],tab[2])))
-                    continue
-            result.append(tab)
-        return sorted(result)
+        return _pair_tabs(tabs, ordinary)
     # Piano: pair adjacent five-line staffs. An unusually close incomplete staff
     # at a scrolling page edge must not consume the next complete grand staff.
     result=[]
@@ -96,7 +133,7 @@ def follow_region(frame, region, notation):
     search = Region(max(0, region.left-.04), max(0, region.top-.16),
                     min(1, region.right+.04), min(1, region.bottom+.16))
     gray = clean_notation(search.crop(frame), notation)
-    groups = system_groups(gray, notation) if notation in ('bass','piano') else staffs(gray, 6 if notation == 'guitar' else 5)
+    groups = system_groups(gray, notation) if notation in ('bass','piano','guitar') else staffs(gray, 5)
     sx, sy = int(search.left*w), int(search.top*h)
     inside = [g for g in groups if g[0]+sy >= region.top*h and g[1]+sy <= region.bottom*h]
     if len(inside) > 1 or not groups:
@@ -108,17 +145,27 @@ def follow_region(frame, region, notation):
     first,last,spacing = min(candidates, key=lambda g: abs((g[0]+g[1])/2-center))
     top, bottom = max(0, int(first-spacing*5)), min(len(gray), int(last+spacing*5)+1)
     raw = search.crop(frame)
+    panel_top = None
     if np.mean(raw[first:last+1] > 200) > .55:
         white = (raw.max(axis=2) > 200).mean(axis=1)
         smooth = cv2.blur(white.reshape(-1,1),(1,max(3,int(spacing*2)))).ravel()
+        # On a white panel its edge bounds the annotations: section boxes and chord names
+        # can sit well above a small staff. Without an edge nearby this is a page; keep
+        # the fixed margin there.
+        limit = max(0, int(first-spacing*14))
         edge = first
-        while edge > top and smooth[edge-1] > .70:
+        while edge > limit and smooth[edge-1] > .70:
             edge -= 1
-        top = max(top, edge)
+        top = edge if edge > limit else max(top, edge)
+        panel_top = edge if edge > limit else None
     # A neighboring staff can be incomplete as a system (e.g. the next TAB is
     # offscreen), but still tells us where this system's annotations must stop.
     neighbors = staffs(gray,5) + staffs(gray,4 if notation == 'bass' else 6)
     for a,b,s in neighbors:
+        # Guitar strings, frets or shelves in the footage can pass for a tiny staff. Only
+        # rules of a comparable size, inside the panel, are neighbouring systems.
+        if not spacing*.6 <= s <= spacing*2.5 or (panel_top is not None and b < panel_top):
+            continue
         if b < first-spacing:
             top = max(top, int((b+first)/2))
         if a > last+spacing:
@@ -131,8 +178,26 @@ def follow_region(frame, region, notation):
     if len(cols):
         left = max(0,int(cols[0]-spacing*3))
         right = min(gray.shape[1],int(cols[-1]+spacing*2)+1)
+        # Never narrower than the selected area: a short system keeps the scale of the
+        # full-width ones when each line is later fitted to the page width.
+        left = min(left, max(0, int(region.left*w)-sx))
+        right = max(right, min(gray.shape[1], int(np.ceil(region.right*w))-sx))
     return Region((sx+left+.01)/w, (sy+top+.01)/h,
                   min(1,(sx+right+.01)/w), min(1,(sy+bottom+.01)/h))
+
+
+def panel_moves(frames, region, notation):
+    """True when the followed system's top edge wanders between sampled frames.
+
+    A strip that resizes to each line's content needs following; a fixed crop would
+    clip the taller lines or let footage into the shorter ones.
+    """
+    tops = []
+    for frame in frames:
+        followed = follow_region(frame, region, notation)
+        if followed != region:
+            tops.append(followed.top*frame.shape[0])
+    return len(tops) >= 3 and max(tops)-min(tops) > max(8, frames[0].shape[0]*.015)
 
 
 def system_fingerprint(gray, notation):

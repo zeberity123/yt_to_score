@@ -218,6 +218,33 @@ def tab_signature(gray, rules=6):
     return signature(255-ink*255, max_width=1600)
 
 
+def cursor_columns(frame):
+    """Columns under a wide translucent playback cursor, or None when there is none.
+
+    Such a band tints the whole system and recolors the notes beneath it (greyed repeat
+    strums turn solid), so the picture under it differs at every sample of the same line.
+    """
+    if frame.ndim != 3:
+        return None
+    bright, dark = frame.max(axis=2).astype(np.int16), frame.min(axis=2).astype(np.int16)
+    tinted = ((bright-dark > 30) & (bright > 160)).mean(axis=0) > .6
+    # A band, not a tinted page or panel.
+    return tinted if 0 < tinted.sum() <= frame.shape[1]*.08 else None
+
+
+def without_cursor(a, b, cursor_a, cursor_b):
+    """Both signatures with the columns under either frame's playback cursor cleared."""
+    if (cursor_a is None and cursor_b is None) or a.shape != b.shape:
+        return a, b
+    mask = np.zeros(a.shape[1], np.uint8)
+    for cursor in (cursor_a, cursor_b):
+        if cursor is not None:
+            mask |= cv2.resize(cursor.astype(np.uint8).reshape(1, -1), (a.shape[1], 1),
+                               interpolation=cv2.INTER_NEAREST).ravel()
+    keep = 1-cv2.dilate(mask.reshape(1, -1), np.ones((1, 9), np.uint8)).ravel()
+    return a*keep, b*keep
+
+
 def difference(a, b, *, fine=False, stable=False):
     """Ink-relative error; one-pixel compression jitter is tolerated."""
     if a.shape != b.shape:

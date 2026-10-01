@@ -1,6 +1,6 @@
 {
   "name": "drum-sheet-workspace",
-  "version": "0.17.2",
+  "version": "0.17.3",
   "private": true,
   "description": "A local video-to-sheet-music PDF workspace with a shared web interface.",
   "main": "desktop/main.cjs",

@@ -79,6 +79,7 @@
   "Page settings and PDF previews use the saved music. No AI request is needed.": ["페이지 설정과 PDF 미리보기는 저장된 악보를 사용합니다. AI 요청이 필요하지 않습니다.", "ページ設定と PDF プレビューには保存済みの楽譜を使用します。AI リクエストは不要です。"],
   "Off: follow the video's original row breaks. Uncertain breaks are reported for review.": ["끄면 영상의 원래 줄 구성을 따릅니다. 불확실한 줄 구분은 검토 사항으로 표시합니다.", "オフの場合は動画の元の段組みに従います。不確かな区切りは確認事項として表示します。"],
   "Follow changing score position": ["악보 위치 변화 따라가기", "楽譜の位置変化を追跡"],
+  "The score panel changes height during the video, so its position was followed automatically.": ["영상에서 악보 패널의 높이가 바뀌어 위치를 자동으로 따라갔습니다.", "動画中に楽譜パネルの高さが変わるため、位置を自動で追跡しました。"],
   "Adjust the area around one system at each sample. Includes paired staffs. Select a starting area around one line; full pages keep the fixed area.": ["각 샘플에서 한 줄의 악보에 맞춰 영역을 조정합니다. 연결된 두 보표도 지원합니다. 시작 영역은 한 줄을 둘러싸도록 선택하세요. 전체 페이지는 고정 영역을 사용합니다.", "各サンプルで1段の楽譜に合わせて領域を調整します。組になった譜表にも対応します。最初の領域は1段を囲むように選択してください。全ページでは固定領域を使います。"],
   "Checking identical repeats using timing": ["재생 시간으로 동일한 반복 줄 확인 중", "表示時間から同じ行の繰り返しを確認中"],
   "For a steady tempo and one score system at a time, including paired staffs. 4/4 = 4; 3/4 and 6/8 = 3 quarter-note beats. Review inferred repeats; pauses and written repeats can mislead timing.": ["일정한 템포로 한 줄씩 표시되는 악보에 사용하세요. 연결된 두 보표도 지원합니다. 4/4는 4, 3/4와 6/8은 3을 입력하세요. 정지 구간과 반복 기호가 영향을 줄 수 있으므로 복원된 줄을 확인하세요.", "一定のテンポで1段ずつ表示する楽譜用です。組になった譜表にも対応します。4/4は4、3/4と6/8は3を入力します。停止や反復記号で推定がずれるため、復元した行を確認してください。"],
