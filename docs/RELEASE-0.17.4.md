@@ -18,3 +18,7 @@ the settings card instead of wrapping onto two lines.
 - Source Electron checks passed: `scripts/test-print-layout.cjs` and
   `scripts/test-desktop.cjs`. Button heights were measured in English, Korean and
   Japanese (40–43 px, one line).
+- The portable EXE passed startup, bundled media conversion, capture, duplication,
+  print defaults and shutdown cleanup (`scripts/test-portable.cjs`).
+- Artifact: `dist/Video-Sheet-to-PDF-AI-0.17.4-win-x64.exe` (221,214,935 bytes). SHA-256:
+  `8dbda3b3d975b032bd0168cf3e1608c672472fd959535258f861de8a5c71416f`.
