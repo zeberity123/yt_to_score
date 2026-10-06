@@ -275,7 +275,7 @@ def difference(a, b, *, fine=False, stable=False):
     return min(1.0, score*2) if fine else score
 
 
-def split_systems(gray, padding=2, *, with_bounds=False, rules=5, groups=None):
+def split_systems(gray, padding=2, *, with_bounds=False, rules=5, groups=None, skip_clipped=False):
     """Assign connected notation to each staff without slicing through symbols."""
     groups = staffs(gray, rules) if groups is None else groups
     if not groups:
@@ -317,12 +317,20 @@ def split_systems(gray, padding=2, *, with_bounds=False, rules=5, groups=None):
         rows = np.flatnonzero(mask.any(axis=1))
         if len(rows):
             y0, y1 = max(0, rows[0]-padding), min(h, rows[-1]+padding+1)
+            if skip_clipped and len(groups) > 1 and y0 <= 2 and first < spacing*6.5:
+                # Staff rules can remain visible while the stems/flags above
+                # them are cut off by the viewport. Wait for the whole row.
+                continue
+            if skip_clipped and len(groups) > 1 and y1 >= h-2 and h-last < spacing*3.5:
+                # Low drum stems can extend past a still-visible bottom rule.
+                # A partial row would fail to match its next, complete capture.
+                continue
             strip = np.where(mask[y0:y1], gray[y0:y1], 255).astype(np.uint8)
             result.append((strip, (0, int(y0), w, int(y1))) if with_bounds else strip)
     return result
 
 
-def system_signature(image, rules=5):
+def system_signature(image, rules=5, *, ignore_page_heading=False):
     """Align on the first staff so overlapping page crops can be compared."""
     groups = staffs(image, rules)
     if len(groups) != 1:
@@ -338,4 +346,13 @@ def system_signature(image, rules=5):
     if length <= 0:
         return None
     target[target_top:target_top+length] = resized[source_top:source_top+length]
+    if ignore_page_heading and rules == 5:
+        # A scrolling page's title/credits may be assigned to the top system
+        # in one viewport and clipped away in the next. Keep the staff, its
+        # notes, bar numbers and nearby directions as the row identity.
+        spacing = groups[0][2]*scale
+        first = round(90*width/900)
+        last = first+4*spacing
+        target[:max(0, int(first-spacing*6.5))] = 255
+        target[min(len(target), int(np.ceil(last+spacing*6.5))):] = 255
     return tab_signature(target, rules) if rules in (4, 6) else signature(target)

@@ -11,7 +11,7 @@ from .video import check_cancel, frames, metadata, preview
 from .vision import (Region, auto_region, clean_score, clean_tab, cursor_columns, difference, signature,
                      tab_signature, split_systems, staffs, system_signature, without_cursor)
 from .notation import NOTATIONS, clean_notation, system_groups, split_notation, system_fingerprint, notation_signature
-from .matching import aligned_difference, measure_anchors
+from .matching import aligned_difference, measure_anchors, row_number
 
 
 @dataclass
@@ -134,9 +134,11 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
     tab_panel = None
     tab_joins = 0
     def compare_systems(a,b):
-        first, anchors_a = a
-        second, anchors_b = b
+        first, anchors_a, number_a = a
+        second, anchors_b, number_b = b
         if first is None or second is None:
+            return 1.0
+        if number_a is not None and number_b is not None and number_a != number_b:
             return 1.0
         return aligned_difference(first,second,fine=current['fine'],stable=current['stable'],
                                   anchors=None if notation == 'guitar' else (anchors_a,anchors_b))
@@ -155,12 +157,15 @@ def extract(path, destination, title="Sheet music", source="", region=None, mode
             current = None
             return
         # Guitar TAB may carry a staff above it; its chords and section marks belong to that pair.
-        segments = split_notation(image,notation,with_bounds=True) if paired or notation == 'guitar' else split_systems(image, with_bounds=True, rules=rules)
+        segments = split_notation(image,notation,with_bounds=True) if paired or notation == 'guitar' else split_systems(
+            image, with_bounds=True, rules=rules, skip_clipped=remove_overlap)
         strips = [strip for strip, bounds in segments]
         if strips:
             view_number += 1
-            systems = [(system_fingerprint(strip,notation) if paired else system_signature(strip,rules),
-                        measure_anchors(strip,rules=rules,paired=paired)) for strip in strips]
+            systems = [(system_fingerprint(strip,notation) if paired else
+                        system_signature(strip,rules,ignore_page_heading=notation == 'staff'),
+                        measure_anchors(strip,rules=rules,paired=paired),
+                        row_number(strip) if notation == 'staff' else None) for strip in strips]
             overlap = 0
             if remove_overlap and len(strips) > 1 and len(previous_systems) > 1:
                 for size in range(min(len(systems), len(previous_systems)), 0, -1):
